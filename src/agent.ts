@@ -34,7 +34,7 @@ import { executeWorkflow } from './agentGraph/executor';
 export class Agent {
   readonly id: string;       // "zzimong" | "aru" | "sense"
   readonly name: string;     // "찌몽" | "아루" | "센세"
-  readonly config: AgentConfig;
+  config: AgentConfig;
   botClient: Client;         // 이 에이전트 전용 discord.js Client
   botUserId = '';            // Discord User ID (ready 이벤트 후 설정)
 
@@ -48,6 +48,21 @@ export class Agent {
     this.botClient = botClient;
     this.llm = createLLMClient(cfg);
     this.mcpManager = new AgentMCPManager(cfg.id, cfg.mcpTokens);
+  }
+
+  /** 관리 웹 UI에서 설정을 변경할 때 호출됩니다. 즉시 적용 가능한 항목을 갱신합니다. */
+  updateConfig(next: AgentConfig): void {
+    const llmChanged =
+      this.config.provider !== next.provider ||
+      this.config.model !== next.model ||
+      this.config.apiKey !== next.apiKey ||
+      this.config.baseUrl !== next.baseUrl;
+
+    this.config = next;
+    if (llmChanged) {
+      this.llm = createLLMClient(next);
+      console.log(`[${this.name}] LLM 교체: ${next.provider}/${next.model}`);
+    }
   }
 
   // ── 공개 메서드 ────────────────────────────────────────────

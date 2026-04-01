@@ -22,6 +22,7 @@ import { createRouter } from './router';
 import { loadFromDiscord } from './history';
 import { TaskGraph } from './task/graph';
 import { loadIncompleteGraphs } from './task/store';
+import { startAdminServer } from './admin/server';
 
 interface SlashCommand {
   data: { name: string };
@@ -206,6 +207,9 @@ async function main(): Promise<void> {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
+  // 관리 웹 서버 시작
+  startAdminServer(agents, appCfg, [...clients, ...(cmdClient ? [cmdClient] : [])]);
 
   console.log('🚀 discord-ai-team 시작 완료');
 }

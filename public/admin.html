@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DiscordAgentOS Admin</title>
+<style>
+/* ── Reset & Base ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #22263a;
+  --border: #2e3250;
+  --text: #e2e4f0;
+  --text-muted: #7b82a8;
+  --accent: #5865f2;
+  --accent-hover: #4752c4;
+  --green: #57f287;
+  --yellow: #faa61a;
+  --red: #ed4245;
+  --panel-w: 420px;
+  --radius: 10px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
+a { color: var(--accent); text-decoration: none; }
+input, textarea, select {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 7px 10px; font-size: 13px; font-family: var(--font);
+  width: 100%; outline: none; transition: border-color .15s;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+textarea { resize: vertical; min-height: 120px; font-family: 'SF Mono', 'Fira Code', monospace; }
+button { cursor: pointer; font-family: var(--font); font-size: 13px; border: none; border-radius: 6px; padding: 7px 14px; transition: background .15s, opacity .15s; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; font-weight: 500; letter-spacing: .3px; }
+
+/* ── Layout ───────────────────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 24px; height: 56px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 100;
+}
+.topbar-logo { font-weight: 700; font-size: 16px; letter-spacing: -.3px; color: var(--text); }
+.topbar-logo span { color: var(--accent); }
+.topbar-spacer { flex: 1; }
+.guild-badge {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 4px 12px 4px 8px; font-size: 12px;
+}
+.guild-badge img { width: 20px; height: 20px; border-radius: 50%; }
+.guild-badge .guild-name { color: var(--text); font-weight: 600; }
+.main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+
+/* ── Buttons ──────────────────────────────────────────────── */
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+.btn-ghost:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
+.btn-danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
+.btn-danger:hover:not(:disabled) { background: rgba(237,66,69,.1); }
+.btn-icon { background: transparent; color: var(--text-muted); padding: 4px 8px; border-radius: 4px; }
+.btn-icon:hover { background: var(--surface2); color: var(--text); }
+.icon-btn-row { display: flex; gap: 6px; align-items: center; }
+
+/* ── Section ──────────────────────────────────────────────── */
+.section-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 14px; margin-top: 28px;
+}
+.section-header:first-child { margin-top: 0; }
+.section-title { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; }
+.section-count { font-size: 12px; color: var(--text-muted); background: var(--surface2); border-radius: 10px; padding: 1px 8px; }
+.section-spacer { flex: 1; }
+
+/* ── Bot Cards ────────────────────────────────────────────── */
+.bot-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+.bot-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px; width: 180px; cursor: pointer;
+  transition: border-color .15s, transform .1s;
+}
+.bot-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.bot-card.active { border-color: var(--accent); background: var(--surface2); }
+.bot-card-avatar { width: 40px; height: 40px; border-radius: 50%; margin-bottom: 10px; background: var(--surface2); }
+.bot-card-name { font-weight: 700; font-size: 14px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bot-card-meta { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
+.bot-card-meta .model { color: var(--text); }
+.bot-card .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; }
+.dot-green { background: var(--green); }
+.dot-grey { background: var(--text-muted); }
+.add-card {
+  width: 180px; border: 1px dashed var(--border); border-radius: var(--radius);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; cursor: pointer; padding: 16px; color: var(--text-muted);
+  transition: border-color .15s, color .15s; min-height: 140px;
+}
+.add-card:hover { border-color: var(--accent); color: var(--accent); }
+.add-card-icon { font-size: 22px; }
+.add-card-label { font-size: 12px; }
+
+/* ── Channel List ─────────────────────────────────────────── */
+.channel-category { margin-bottom: 4px; }
+.category-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; font-size: 11px; font-weight: 700;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px;
+  cursor: pointer; border-radius: 4px; user-select: none;
+}
+.category-header:hover { background: var(--surface2); }
+.category-arrow { font-size: 10px; transition: transform .15s; }
+.category-arrow.open { transform: rotate(90deg); }
+.channel-list { display: flex; flex-direction: column; gap: 1px; padding-left: 8px; }
+.channel-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: 6px; cursor: pointer;
+  transition: background .1s; border: 1px solid transparent;
+}
+.channel-row:hover { background: var(--surface); }
+.channel-row.active { background: var(--surface2); border-color: var(--border); }
+.ch-icon { color: var(--text-muted); font-size: 14px; flex-shrink: 0; }
+.ch-name { font-size: 13px; flex: 1; }
+.ch-role { font-size: 11px; padding: 2px 7px; border-radius: 10px; flex-shrink: 0; }
+.role-chat { background: rgba(88,101,242,.2); color: #8b96f7; }
+.role-config { background: rgba(250,166,26,.15); color: var(--yellow); }
+.role-collab { background: rgba(87,242,135,.15); color: var(--green); }
+.role-none { color: var(--text-muted); background: var(--surface2); }
+.ch-agent { font-size: 11px; color: var(--text-muted); margin-left: 4px; }
+.ch-history { font-size: 11px; color: var(--text-muted); }
+
+/* ── Slide Panel ──────────────────────────────────────────── */
+.panel-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.4);
+  z-index: 200; opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.panel-overlay.open { opacity: 1; pointer-events: all; }
+.slide-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: var(--panel-w); background: var(--surface);
+  border-left: 1px solid var(--border); z-index: 201;
+  transform: translateX(100%); transition: transform .25s cubic-bezier(.4,0,.2,1);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.slide-panel.open { transform: translateX(0); }
+.panel-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.panel-title { font-weight: 700; font-size: 15px; flex: 1; }
+.panel-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+.panel-footer { padding: 16px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
+
+/* ── Form Sections ────────────────────────────────────────── */
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-section { display: flex; flex-direction: column; gap: 12px; }
+.form-section-title {
+  font-size: 11px; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .5px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.input-with-action { display: flex; gap: 6px; }
+.input-with-action input { flex: 1; }
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600;
+}
+.badge-green { background: rgba(87,242,135,.15); color: var(--green); }
+.badge-yellow { background: rgba(250,166,26,.15); color: var(--yellow); }
+.field-hint { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── KV List (MCP tokens / toolBots) ─────────────────────── */
+.kv-list { display: flex; flex-direction: column; gap: 6px; }
+.kv-row { display: flex; gap: 6px; align-items: center; }
+.kv-row input { flex: 1; }
+
+/* ── Toggle ───────────────────────────────────────────────── */
+.toggle-row { display: flex; align-items: center; justify-content: space-between; }
+.toggle { position: relative; display: inline-block; width: 38px; height: 21px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0; background: var(--border);
+  border-radius: 21px; transition: background .2s; cursor: pointer;
+}
+.toggle-slider::before {
+  content: ''; position: absolute; width: 15px; height: 15px;
+  left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .2s;
+}
+.toggle input:checked + .toggle-slider { background: var(--accent); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(17px); }
+
+/* ── Toast ────────────────────────────────────────────────── */
+.toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 16px; font-size: 13px;
+  min-width: 220px; display: flex; align-items: center; gap: 8px;
+  animation: slideIn .2s ease; box-shadow: 0 4px 20px rgba(0,0,0,.4);
+}
+.toast.success { border-color: var(--green); }
+.toast.error { border-color: var(--red); }
+@keyframes slideIn { from { opacity:0; transform: translateX(20px); } to { opacity:1; transform: none; } }
+
+/* ── Misc ─────────────────────────────────────────────────── */
+.divider { border: none; border-top: 1px solid var(--border); }
+.flex-row { display: flex; gap: 8px; align-items: center; }
+.loading { color: var(--text-muted); font-size: 13px; padding: 12px 0; }
+.empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 32px 0; }
+</style>
+</head>
+<body>
+
+<!-- ── Top Bar ─────────────────────────────────────────────── -->
+<div class="topbar">
+  <div class="topbar-logo">Discord<span>AgentOS</span></div>
+  <div id="guild-badge" class="guild-badge" style="display:none">
+    <img id="guild-icon" src="" alt="">
+    <span id="guild-name" class="guild-name"></span>
+  </div>
+  <div class="topbar-spacer"></div>
+  <button class="btn-ghost" onclick="openSystemPanel()">⚙️ 시스템</button>
+  <button class="btn-ghost" onclick="refreshDiscord()">🔄 갱신</button>
+</div>
+
+<!-- ── Main ───────────────────────────────────────────────── -->
+<div class="main">
+
+  <!-- 봇 섹션 -->
+  <div class="section-header">
+    <span class="section-title">봇</span>
+    <span class="section-count" id="bot-count">0</span>
+    <div class="section-spacer"></div>
+  </div>
+  <div class="bot-grid" id="bot-grid">
+    <div class="loading">불러오는 중...</div>
+  </div>
+
+  <!-- 채널 섹션 -->
+  <div class="section-header" style="margin-top:32px">
+    <span class="section-title">채널</span>
+    <span class="section-count" id="ch-count">0</span>
+  </div>
+  <div id="channel-list">
+    <div class="loading">불러오는 중...</div>
+  </div>
+
+</div>
+
+<!-- ── Slide Panel ─────────────────────────────────────────── -->
+<div class="panel-overlay" id="overlay" onclick="closePanel()"></div>
+<div class="slide-panel" id="slide-panel">
+  <div class="panel-header">
+    <div class="panel-title" id="panel-title"></div>
+    <button class="btn-icon" onclick="closePanel()">✕</button>
+  </div>
+  <div class="panel-body" id="panel-body"></div>
+  <div class="panel-footer" id="panel-footer"></div>
+</div>
+
+<!-- ── Toast Container ─────────────────────────────────────── -->
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+// ── State ────────────────────────────────────────────────────
+const state = {
+  config: null,      // AppConfig (raw)
+  channels: null,    // { categories, uncategorized }
+  bots: [],          // discord bot members
+  status: null,      // /api/status
+  activePanel: null, // 'bot:id' | 'channel:id' | 'system'
+};
+
+// ── Init ─────────────────────────────────────────────────────
+async function init() {
+  await Promise.all([loadConfig(), loadStatus()]);
+  await Promise.all([loadDiscordBots(), loadDiscordChannels()]);
+  renderBots();
+  renderChannels();
+  renderGuildBadge();
+}
+
+// ── API helpers ──────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  const res = await fetch('/api' + path, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  return res.json();
+}
+
+async function loadConfig() {
+  state.config = await api('GET', '/config/raw');
+}
+async function loadStatus() {
+  state.status = await api('GET', '/status');
+}
+async function loadDiscordBots() {
+  try {
+    const data = await api('GET', '/discord/bots');
+    state.bots = data.bots;
+  } catch { state.bots = []; }
+}
+async function loadDiscordChannels() {
+  try {
+    state.channels = await api('GET', '/discord/channels');
+  } catch { state.channels = { categories: [], uncategorized: [] }; }
+}
+
+async function refreshDiscord() {
+  toast('Discord 정보 갱신 중...', 'info');
+  await Promise.all([loadDiscordBots(), loadDiscordChannels(), loadConfig(), loadStatus()]);
+  renderBots();
+  renderChannels();
+  renderGuildBadge();
+  toast('갱신 완료', 'success');
+}
+
+// ── Guild Badge ───────────────────────────────────────────────
+function renderGuildBadge() {
+  if (!state.status) return;
+  const badge = document.getElementById('guild-badge');
+  const nameEl = document.getElementById('guild-name');
+  const iconEl = document.getElementById('guild-icon');
+  badge.style.display = 'flex';
+  nameEl.textContent = state.status.guildId ? `서버: ${state.status.guildId}` : '서버 미설정';
+  iconEl.style.display = 'none';
+}
+
+// ── Render Bots ──────────────────────────────────────────────
+function renderBots() {
+  const grid = document.getElementById('bot-grid');
+  const agents = state.config?.agents ?? [];
+  const statusAgents = state.status?.agents ?? [];
+  document.getElementById('bot-count').textContent = agents.length;
+
+  // discord bot 멤버와 매핑
+  const discordBotMap = {};
+  state.bots.forEach(b => { discordBotMap[b.id] = b; });
+
+  grid.innerHTML = '';
+  agents.forEach(agent => {
+    const statusInfo = statusAgents.find(s => s.id === agent.id);
+    const online = statusInfo?.online ?? false;
+    const discordBot = state.bots.find(b =>
+      agent.discordToken && b.username // 토큰으로 매핑 불가, 이름으로 근사
+    );
+
+    const card = document.createElement('div');
+    card.className = 'bot-card' + (state.activePanel === 'bot:' + agent.id ? ' active' : '');
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="width:36px;height:36px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🤖</div>
+        <div>
+          <div class="bot-card-name">${esc(agent.name)}</div>
+          <div style="font-size:11px;color:var(--text-muted)">
+            <span class="status-dot ${online ? 'dot-green' : 'dot-grey'}"></span>
+            ${online ? '온라인' : '오프라인'}
+          </div>
+        </div>
+      </div>
+      <div class="bot-card-meta">
+        <div>${esc(agent.provider)} / <span class="model">${shortModel(agent.model)}</span></div>
+        ${agent.chatChannel ? `<div>${channelName(agent.chatChannel)}</div>` : '<div style="color:var(--text-muted)">채널 미설정</div>'}
+        ${agent.githubRepo ? `<div style="color:var(--accent)">${esc(agent.githubRepo)}</div>` : ''}
+      </div>`;
+    card.onclick = () => openBotPanel(agent.id);
+    grid.appendChild(card);
+  });
+
+  // 봇 추가 카드
+  const addCard = document.createElement('div');
+  addCard.className = 'add-card';
+  addCard.innerHTML = `<div class="add-card-icon">+</div><div class="add-card-label">봇 등록</div>`;
+  addCard.onclick = openAddBotPanel;
+  grid.appendChild(addCard);
+}
+
+// ── Render Channels ──────────────────────────────────────────
+function renderChannels() {
+  const container = document.getElementById('channel-list');
+  if (!state.channels) { container.innerHTML = '<div class="empty">채널 정보 없음</div>'; return; }
+
+  const { categories, uncategorized } = state.channels;
+  const allChs = [...categories.flatMap(c => c.channels), ...uncategorized];
+  document.getElementById('ch-count').textContent = allChs.length;
+
+  container.innerHTML = '';
+
+  const renderCategoryBlock = (name, channels, collapsed) => {
+    const block = document.createElement('div');
+    block.className = 'channel-category';
+
+    const header = document.createElement('div');
+    header.className = 'category-header';
+    header.innerHTML = `<span class="category-arrow ${collapsed ? '' : 'open'}">▶</span><span>${esc(name)}</span><span style="color:var(--border);margin-left:4px">${channels.length}</span>`;
+
+    const list = document.createElement('div');
+    list.className = 'channel-list';
+    list.style.display = collapsed ? 'none' : 'flex';
+
+    channels.forEach(ch => { list.appendChild(buildChannelRow(ch)); });
+
+    header.onclick = () => {
+      const arrow = header.querySelector('.category-arrow');
+      const open = list.style.display !== 'none';
+      list.style.display = open ? 'none' : 'flex';
+      arrow.classList.toggle('open', !open);
+    };
+
+    block.appendChild(header);
+    block.appendChild(list);
+    return block;
+  };
+
+  categories.forEach(cat => {
+    if (cat.channels.length === 0) return;
+    container.appendChild(renderCategoryBlock(cat.name, cat.channels, false));
+  });
+
+  if (uncategorized.length > 0) {
+    container.appendChild(renderCategoryBlock('기타', uncategorized, true));
+  }
+}
+
+function buildChannelRow(ch) {
+  const row = document.createElement('div');
+  const role = getChannelRole(ch.id);
+  const agentName = getChannelAgent(ch.id);
+  const histOverride = state.config?.channelLimits?.[ch.id];
+
+  row.className = 'channel-row' + (state.activePanel === 'channel:' + ch.id ? ' active' : '');
+  row.innerHTML = `
+    <span class="ch-icon">#</span>
+    <span class="ch-name">${esc(ch.name)}</span>
+    ${role ? `<span class="ch-role ${roleClass(role)}">${roleLabel(role)}</span>` : '<span class="ch-role role-none">미지정</span>'}
+    ${agentName ? `<span class="ch-agent">· ${esc(agentName)}</span>` : ''}
+    ${histOverride ? `<span class="ch-history">히스토리 ${histOverride} ✏</span>` : ''}
+  `;
+  row.onclick = () => openChannelPanel(ch.id, ch.name);
+  return row;
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function shortModel(m) { return (m ?? '').replace('claude-','').replace('-latest',''); }
+function channelName(id) {
+  if (!state.channels) return `#${id}`;
+  const all = [...(state.channels.categories ?? []).flatMap(c=>c.channels), ...(state.channels.uncategorized ?? [])];
+  const ch = all.find(c => c.id === id);
+  return ch ? '#' + ch.name : `#${id}`;
+}
+function getChannelRole(id) {
+  if (!state.config) return null;
+  if (state.config.collabChannel === id) return 'collab';
+  for (const a of state.config.agents) {
+    if (a.chatChannel === id) return 'chat';
+    if (a.configChannel === id) return 'config';
+  }
+  return null;
+}
+function getChannelAgent(id) {
+  if (!state.config) return null;
+  for (const a of state.config.agents) {
+    if (a.chatChannel === id || a.configChannel === id) return a.name;
+  }
+  return null;
+}
+function roleClass(role) {
+  return { chat: 'role-chat', config: 'role-config', collab: 'role-collab' }[role] ?? 'role-none';
+}
+function roleLabel(role) {
+  return { chat: '대화채널', config: '설정채널', collab: '협력채널' }[role] ?? '미지정';
+}
+function allChannelOptions() {
+  if (!state.channels) return '';
+  const all = [...(state.channels.categories ?? []).flatMap(c=>c.channels), ...(state.channels.uncategorized ?? [])];
+  return all.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+}
+function restartBadge() { return `<span class="badge badge-yellow">⚠️ 재시작 필요</span>`; }
+function hotBadge() { return `<span class="badge badge-green">✅ 즉시 적용</span>`; }
+
+// ── Panel ────────────────────────────────────────────────────
+function openPanel(title, bodyHTML, footerHTML) {
+  document.getElementById('panel-title').innerHTML = title;
+  document.getElementById('panel-body').innerHTML = bodyHTML;
+  document.getElementById('panel-footer').innerHTML = footerHTML;
+  document.getElementById('overlay').classList.add('open');
+  document.getElementById('slide-panel').classList.add('open');
+}
+function closePanel() {
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('slide-panel').classList.remove('open');
+  state.activePanel = null;
+  renderBots();
+  renderChannels();
+}
+
+// ── Bot Panel ─────────────────────────────────────────────────
+function openBotPanel(agentId) {
+  state.activePanel = 'bot:' + agentId;
+  const agent = state.config.agents.find(a => a.id === agentId);
+  if (!agent) return;
+
+  loadPersona(agentId).then(persona => {
+    const mcpRows = Object.entries(agent.mcpTokens ?? {})
+      .map(([k,v]) => `
+        <div class="kv-row" data-key="${esc(k)}">
+          <input value="${esc(k)}" placeholder="환경변수명" oninput="this.dataset.origKey=this.dataset.origKey||'${esc(k)}'" style="width:140px;flex:none">
+          <input value="${esc(v)}" placeholder="값" type="password">
+          <button class="btn-icon" onclick="this.closest('.kv-row').remove()">🗑</button>
+        </div>`).join('');
+
+    openPanel(
+      `🤖 ${esc(agent.name)}`,
+      `<div class="form-section">
+        <div class="form-section-title">기본</div>
+        <div class="form-group">
+          <label>표시 이름</label>
+          <input id="f-name" value="${esc(agent.name)}">
+        </div>
+        <div class="form-group">
+          <label>Discord 토큰 ${restartBadge()}</label>
+          <input id="f-token" value="${esc(agent.discordToken)}" type="password">
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">LLM ${hotBadge()}</div>
+        <div class="form-group">
+          <label>Provider</label>
+          <select id="f-provider" onchange="updateModelHint()">
+            ${['anthropic','openai','gemini','minimax'].map(p=>`<option ${agent.provider===p?'selected':''}>${p}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>모델</label>
+          <input id="f-model" value="${esc(agent.model)}">
+        </div>
+        <div class="form-group">
+          <label>API 키</label>
+          <input id="f-apikey" value="${esc(agent.apiKey)}" type="password">
+        </div>
+        <div class="form-group">
+          <label>Base URL <span style="color:var(--text-muted)">(anthropic 외 provider에서 사용)</span></label>
+          <input id="f-baseurl" value="${esc(agent.baseUrl ?? '')}">
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">채널 연결 ${restartBadge()}</div>
+        <div class="form-group">
+          <label>대화 채널</label>
+          <select id="f-chat-ch">
+            <option value="">-- 선택 --</option>
+            ${allChannelOptions().replace(`value="${agent.chatChannel}"`, `value="${agent.chatChannel}" selected`)}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>설정 채널</label>
+          <select id="f-cfg-ch">
+            <option value="">-- 선택 --</option>
+            ${allChannelOptions().replace(`value="${agent.configChannel}"`, `value="${agent.configChannel}" selected`)}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">기타 ${hotBadge()}</div>
+        <div class="form-group">
+          <label>GitHub 레포 <span style="color:var(--text-muted)">(owner/repo)</span></label>
+          <input id="f-github" value="${esc(agent.githubRepo ?? '')}">
+        </div>
+        <div class="toggle-row">
+          <label style="margin:0">Computer Use</label>
+          <label class="toggle">
+            <input type="checkbox" id="f-computer" ${agent.computerUse ? 'checked' : ''}>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">페르소나 ${hotBadge()}</div>
+        <div class="form-group">
+          <textarea id="f-persona" style="min-height:180px">${esc(persona)}</textarea>
+          <span class="field-hint">파일 저장 즉시 반영됩니다.</span>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">MCP 토큰 ${restartBadge()}</div>
+        <div class="kv-list" id="mcp-list">${mcpRows}</div>
+        <button class="btn-ghost" style="width:100%;margin-top:6px" onclick="addMcpRow()">+ 토큰 추가</button>
+      </div>`,
+
+      `<button class="btn-danger" onclick="removeBotConfirm('${agentId}')">봇 제거</button>
+       <div style="flex:1"></div>
+       <button class="btn-ghost" onclick="closePanel()">취소</button>
+       <button class="btn-primary" onclick="saveBotPanel('${agentId}')">💾 저장</button>`
+    );
+  });
+}
+
+async function loadPersona(agentId) {
+  try {
+    const data = await api('GET', `/config/agents/${agentId}/persona`);
+    return data.content ?? '';
+  } catch { return ''; }
+}
+
+function addMcpRow() {
+  const list = document.getElementById('mcp-list');
+  const row = document.createElement('div');
+  row.className = 'kv-row';
+  row.innerHTML = `
+    <input placeholder="ENV_VAR_NAME" style="width:140px;flex:none">
+    <input placeholder="값" type="password">
+    <button class="btn-icon" onclick="this.closest('.kv-row').remove()">🗑</button>`;
+  list.appendChild(row);
+}
+
+async function saveBotPanel(agentId) {
+  try {
+    const patch = {
+      name: val('f-name'),
+      discordToken: val('f-token'),
+      provider: val('f-provider'),
+      model: val('f-model'),
+      apiKey: val('f-apikey'),
+      baseUrl: val('f-baseurl') || undefined,
+      chatChannel: val('f-chat-ch'),
+      configChannel: val('f-cfg-ch'),
+      githubRepo: val('f-github') || undefined,
+      computerUse: document.getElementById('f-computer').checked,
+      mcpTokens: collectKvList('mcp-list'),
+    };
+
+    const persona = val('f-persona');
+
+    await Promise.all([
+      api('PUT', `/config/agents/${agentId}`, patch),
+      api('PUT', `/config/agents/${agentId}/persona`, { content: persona }),
+    ]);
+
+    await loadConfig();
+    toast('저장 완료', 'success');
+    closePanel();
+  } catch(e) {
+    toast('저장 실패: ' + e.message, 'error');
+  }
+}
+
+function removeBotConfirm(agentId) {
+  if (!confirm(`이 봇을 설정에서 제거하시겠습니까?\n(Discord 서버에서 실제 봇이 제거되지는 않습니다)`)) return;
+  const idx = state.config.agents.findIndex(a => a.id === agentId);
+  if (idx === -1) return;
+  state.config.agents.splice(idx, 1);
+  api('PUT', '/config', state.config)
+    .then(() => { toast('봇 제거 완료 — 재시작 필요', 'success'); closePanel(); })
+    .catch(e => toast('오류: ' + e.message, 'error'));
+}
+
+// ── Add Bot Panel ──────────────────────────────────────────────
+function openAddBotPanel() {
+  state.activePanel = 'add-bot';
+  const discordBotOptions = state.bots.map(b =>
+    `<option value="${b.id}">${b.username} (${b.id})</option>`
+  ).join('');
+
+  openPanel(
+    '+ 봇 등록',
+    `<div class="form-section">
+      <div class="form-section-title">Discord 봇 선택</div>
+      <div class="form-group">
+        <label>서버에 있는 봇</label>
+        <select id="nb-discord-bot">
+          <option value="">-- 선택 --</option>
+          ${discordBotOptions}
+        </select>
+        <span class="field-hint">봇이 보이지 않으면 먼저 Discord 서버에 초대하세요.</span>
+      </div>
+      <div class="form-group">
+        <label>에이전트 ID <span style="color:var(--text-muted)">(영문 소문자)</span></label>
+        <input id="nb-id" placeholder="예: aru">
+      </div>
+      <div class="form-group">
+        <label>표시 이름</label>
+        <input id="nb-name" placeholder="예: 아루">
+      </div>
+      <div class="form-group">
+        <label>Discord 토큰 ${restartBadge()}</label>
+        <input id="nb-token" type="password" placeholder="Bot Token">
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">LLM</div>
+      <div class="form-group">
+        <label>Provider</label>
+        <select id="nb-provider">
+          ${['anthropic','openai','gemini','minimax'].map(p=>`<option>${p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>모델</label>
+        <input id="nb-model" placeholder="예: claude-sonnet-4-6" value="claude-sonnet-4-6">
+      </div>
+      <div class="form-group">
+        <label>API 키</label>
+        <input id="nb-apikey" type="password">
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">채널 연결 ${restartBadge()}</div>
+      <div class="form-group">
+        <label>대화 채널</label>
+        <select id="nb-chat-ch">
+          <option value="">-- 선택 --</option>
+          ${allChannelOptions()}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>설정 채널</label>
+        <select id="nb-cfg-ch">
+          <option value="">-- 선택 --</option>
+          ${allChannelOptions()}
+        </select>
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">페르소나</div>
+      <div class="form-group">
+        <textarea id="nb-persona" placeholder="당신은 아루입니다..."></textarea>
+      </div>
+    </div>`,
+    `<button class="btn-ghost" onclick="closePanel()">취소</button>
+     <button class="btn-primary" onclick="addBotSave()">등록</button>`
+  );
+}
+
+async function addBotSave() {
+  const id = val('nb-id').trim();
+  if (!id) { toast('에이전트 ID를 입력하세요', 'error'); return; }
+  if (state.config.agents.find(a => a.id === id)) { toast('이미 존재하는 ID입니다', 'error'); return; }
+
+  const newAgent = {
+    id,
+    name: val('nb-name') || id,
+    discordToken: val('nb-token'),
+    provider: val('nb-provider'),
+    model: val('nb-model'),
+    apiKey: val('nb-apikey'),
+    chatChannel: val('nb-chat-ch'),
+    configChannel: val('nb-cfg-ch'),
+    personaFile: `data/personas/${id}.md`,
+    mcpTokens: {},
+  };
+
+  const persona = val('nb-persona');
+
+  try {
+    state.config.agents.push(newAgent);
+    await api('PUT', '/config', state.config);
+    if (persona) {
+      await api('PUT', `/config/agents/${id}/persona`, { content: persona });
+    }
+    await loadConfig();
+    toast('봇 등록 완료 — 재시작 후 적용됩니다', 'success');
+    closePanel();
+    renderBots();
+  } catch(e) {
+    state.config.agents.pop();
+    toast('오류: ' + e.message, 'error');
+  }
+}
+
+// ── Channel Panel ──────────────────────────────────────────────
+function openChannelPanel(chId, chName) {
+  state.activePanel = 'channel:' + chId;
+  const role = getChannelRole(chId) ?? '';
+  const agent = state.config?.agents.find(a => a.chatChannel === chId || a.configChannel === chId);
+  const histOverride = state.config?.channelLimits?.[chId] ?? '';
+
+  const agentOptions = state.config.agents.map(a =>
+    `<option value="${a.id}" ${agent?.id === a.id ? 'selected' : ''}>${a.name}</option>`
+  ).join('');
+
+  openPanel(
+    `# ${esc(chName)}`,
+    `<div class="form-section">
+      <div class="form-section-title">역할 ${restartBadge()}</div>
+      <div class="form-group" style="gap:8px">
+        ${[['','미지정'],['chat','대화채널'],['config','설정채널'],['collab','협력채널']].map(([v,l])=>`
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">
+            <input type="radio" name="ch-role" value="${v}" ${role===v?'checked':''}>
+            <span class="ch-role ${roleClass(v)||'role-none'}" style="font-size:12px">${l}</span>
+          </label>`).join('')}
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">담당 에이전트 ${restartBadge()}</div>
+      <div class="form-group">
+        <select id="ch-agent">
+          <option value="">-- 없음 --</option>
+          ${agentOptions}
+        </select>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">히스토리 오버라이드 ${hotBadge()}</div>
+      <div class="form-group">
+        <div class="flex-row">
+          <input id="ch-hist" type="number" value="${histOverride}" placeholder="${state.config?.historyLimit ?? 20} (기본값)" style="width:100px;flex:none">
+          <span style="color:var(--text-muted);font-size:12px">개 (비워두면 기본값 사용)</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:var(--surface2);border-radius:6px;padding:10px 12px;font-size:12px;color:var(--text-muted)">
+      채널 ID: <code style="color:var(--text)">${chId}</code>
+    </div>`,
+
+    `<button class="btn-ghost" onclick="closePanel()">취소</button>
+     <button class="btn-primary" onclick="saveChannelPanel('${chId}')">💾 저장</button>`
+  );
+}
+
+async function saveChannelPanel(chId) {
+  const role = document.querySelector('input[name="ch-role"]:checked')?.value ?? '';
+  const agentId = val('ch-agent');
+  const hist = val('ch-hist');
+
+  const cfg = state.config;
+
+  // 기존 채널 역할 해제
+  cfg.agents.forEach(a => {
+    if (a.chatChannel === chId) a.chatChannel = '';
+    if (a.configChannel === chId) a.configChannel = '';
+  });
+  if (cfg.collabChannel === chId) cfg.collabChannel = '';
+
+  // 새 역할 적용
+  if (role === 'collab') {
+    cfg.collabChannel = chId;
+  } else if (role && agentId) {
+    const agent = cfg.agents.find(a => a.id === agentId);
+    if (agent) {
+      if (role === 'chat') agent.chatChannel = chId;
+      if (role === 'config') agent.configChannel = chId;
+    }
+  }
+
+  // 히스토리 오버라이드
+  if (hist) {
+    cfg.channelLimits = cfg.channelLimits ?? {};
+    cfg.channelLimits[chId] = parseInt(hist);
+  } else {
+    delete cfg.channelLimits?.[chId];
+  }
+
+  try {
+    await api('PUT', '/config', cfg);
+    await loadConfig();
+    toast('채널 설정 저장 완료', 'success');
+    closePanel();
+    renderChannels();
+  } catch(e) {
+    toast('저장 실패: ' + e.message, 'error');
+  }
+}
+
+// ── System Panel ───────────────────────────────────────────────
+function openSystemPanel() {
+  state.activePanel = 'system';
+  const cfg = state.config ?? {};
+  const toolBotRows = Object.entries(cfg.toolBots ?? {}).map(([k,v]) => `
+    <div class="kv-row">
+      <input value="${esc(k)}" placeholder="봇 username">
+      <input value="${esc(v)}" placeholder="MCP 서비스명">
+      <button class="btn-icon" onclick="this.closest('.kv-row').remove()">🗑</button>
+    </div>`).join('');
+
+  openPanel(
+    '⚙️ 시스템 설정',
+    `<div class="form-section">
+      <div class="form-section-title">기본 ${restartBadge()}</div>
+      <div class="form-group">
+        <label>Discord 서버 ID</label>
+        <input id="s-guild" value="${esc(cfg.guildId ?? '')}">
+      </div>
+      <div class="form-group">
+        <label>협력 채널</label>
+        <select id="s-collab">
+          <option value="">-- 선택 --</option>
+          ${allChannelOptions().replace(`value="${cfg.collabChannel}"`, `value="${cfg.collabChannel}" selected`)}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>CmdBot 토큰</label>
+        <input id="s-cmdbot" type="password" value="${esc(cfg.cmdBot?.discordToken ?? '')}">
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">관리 서버</div>
+      <div class="form-group">
+        <label>포트</label>
+        <input id="s-port" type="number" value="${cfg.adminPort ?? 3000}" style="width:100px">
+      </div>
+      <div class="form-group">
+        <label>바인딩 호스트</label>
+        <input id="s-host" value="${esc(cfg.adminHost ?? '127.0.0.1')}">
+        <span class="field-hint">외부 노출 시 0.0.0.0 (재시작 필요)</span>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">대화 히스토리 ${hotBadge()}</div>
+      <div class="form-group">
+        <label>기본 히스토리 수</label>
+        <input id="s-hist" type="number" value="${cfg.historyLimit ?? 20}" style="width:100px">
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">툴봇 매핑 ${hotBadge()}</div>
+      <div class="kv-list" id="toolbot-list">${toolBotRows}</div>
+      <button class="btn-ghost" style="width:100%;margin-top:6px" onclick="addToolBotRow()">+ 매핑 추가</button>
+    </div>`,
+
+    `<button class="btn-ghost" onclick="closePanel()">취소</button>
+     <button class="btn-primary" onclick="saveSystem()">💾 저장</button>`
+  );
+}
+
+function addToolBotRow() {
+  const list = document.getElementById('toolbot-list');
+  const row = document.createElement('div');
+  row.className = 'kv-row';
+  row.innerHTML = `
+    <input placeholder="봇 username">
+    <input placeholder="MCP 서비스명 또는 computer">
+    <button class="btn-icon" onclick="this.closest('.kv-row').remove()">🗑</button>`;
+  list.appendChild(row);
+}
+
+async function saveSystem() {
+  const cfg = state.config;
+  cfg.guildId = val('s-guild');
+  cfg.collabChannel = val('s-collab');
+  cfg.adminPort = parseInt(val('s-port')) || 3000;
+  cfg.adminHost = val('s-host') || '127.0.0.1';
+  cfg.historyLimit = parseInt(val('s-hist')) || 20;
+  cfg.toolBots = collectKvList('toolbot-list');
+
+  const cmdToken = val('s-cmdbot');
+  if (cmdToken && !cmdToken.includes('•')) {
+    cfg.cmdBot = { ...(cfg.cmdBot ?? {}), discordToken: cmdToken };
+  }
+
+  try {
+    await api('PUT', '/config', cfg);
+    await loadConfig();
+    toast('시스템 설정 저장 완료', 'success');
+    closePanel();
+  } catch(e) {
+    toast('저장 실패: ' + e.message, 'error');
+  }
+}
+
+// ── Utilities ─────────────────────────────────────────────────
+function val(id) {
+  const el = document.getElementById(id);
+  return el ? el.value : '';
+}
+function collectKvList(listId) {
+  const result = {};
+  document.querySelectorAll(`#${listId} .kv-row`).forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    const k = inputs[0]?.value?.trim();
+    const v = inputs[1]?.value?.trim();
+    if (k && v) result[k] = v;
+  });
+  return result;
+}
+
+// ── Toast ─────────────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const icon = { success: '✅', error: '❌', info: 'ℹ️' }[type] ?? 'ℹ️';
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span>${icon}</span><span>${esc(msg)}</span>`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ── Start ──────────────────────────────────────────────────────
+init().catch(e => {
+  document.querySelector('.main').innerHTML =
+    `<div class="empty" style="padding-top:60px">⚠️ 초기화 실패: ${esc(e.message)}</div>`;
+});
+</script>
+</body>
+</html>

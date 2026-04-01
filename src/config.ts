@@ -44,7 +44,11 @@ export interface AppConfig {
   /** 슬래시 커맨드 전담 봇 설정 (없으면 커맨드 비활성화) */
   cmdBot?: CmdBotConfig;
   collabChannel: string;
+  /** Discord 서버(길드) ID — 관리 웹 UI에서 채널/봇 목록 조회에 사용 */
+  guildId?: string;
   adminPort: number;
+  /** 관리 서버 바인딩 호스트 (기본값: 127.0.0.1 / 외부 노출 시 0.0.0.0) */
+  adminHost?: string;
   // 툴 봇 이름 → MCP 서버명 (또는 "computer")
   // @멘션으로 해당 MCP 툴을 활성화합니다.
   toolBots: Record<string, string>;
@@ -97,7 +101,9 @@ export function loadConfig(): AppConfig {
 
   return {
     collabChannel: raw.collabChannel,
+    guildId: raw.guildId,
     adminPort: raw.adminPort ?? 3000,
+    adminHost: raw.adminHost,
     agents: raw.agents,
     cmdBot: raw.cmdBot,
     toolBots: raw.toolBots ?? {},
