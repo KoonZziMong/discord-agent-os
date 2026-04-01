@@ -23,8 +23,7 @@ export function startAdminServer(
 ): void {
   const app = express();
   const port = appCfg.adminPort ?? 3000;
-  const host = (appCfg as AppConfig & { adminHost?: string }).adminHost ?? '127.0.0.1';
-  const guildId = (appCfg as AppConfig & { guildId?: string }).guildId ?? '';
+  const host = appCfg.adminHost ?? '127.0.0.1';
 
   app.use(express.json());
 
@@ -32,8 +31,8 @@ export function startAdminServer(
   const publicDir = path.join(__dirname, '..', '..', 'public');
   app.use(express.static(publicDir));
 
-  // API 라우트
-  app.use('/api/discord', createDiscordRouter(clients, guildId));
+  // API 라우트 — appCfg를 참조로 넘기므로 guildId 변경 시 즉시 반영
+  app.use('/api/discord', createDiscordRouter(clients, appCfg));
   app.use('/api/config', createConfigRouter(agents, appCfg));
 
   // 상태 확인
@@ -45,7 +44,7 @@ export function startAdminServer(
         name: a.name,
         online: !!a.botUserId,
       })),
-      guildId,
+      guildId: appCfg.guildId ?? '',
     });
   });
 

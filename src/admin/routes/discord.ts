@@ -12,12 +12,15 @@
 import { Router } from 'express';
 import type { Client, Guild, GuildChannel } from 'discord.js';
 import { ChannelType } from 'discord.js';
+import type { AppConfig } from '../../config';
 
-export function createDiscordRouter(clients: Client[], guildId: string) {
+export function createDiscordRouter(clients: Client[], appCfg: AppConfig) {
   const router = Router();
 
-  /** 첫 번째로 길드를 찾을 수 있는 클라이언트 반환 */
+  /** 첫 번째로 길드를 찾을 수 있는 클라이언트 반환 (매 요청마다 appCfg.guildId를 읽음) */
   async function getGuild(): Promise<Guild | null> {
+    const guildId = appCfg.guildId ?? '';
+    if (!guildId) return null;
     for (const client of clients) {
       try {
         const guild = await client.guilds.fetch(guildId);
