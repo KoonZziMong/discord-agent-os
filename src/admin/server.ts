@@ -49,8 +49,8 @@ export function startAdminServer(
     });
   });
 
-  // SPA fallback
-  app.get('*', (_req, res) => {
+  // SPA fallback (Express 5: * → /{*path})
+  app.get('/{*path}', (_req, res) => {
     res.sendFile(path.join(publicDir, 'admin.html'));
   });
 
