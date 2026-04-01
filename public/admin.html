@@ -279,6 +279,16 @@ async function init() {
   renderBots();
   renderChannels();
   renderGuildBadge();
+
+  // 채널이 비어있고 guildId가 있으면 1.5초 후 자동 재시도
+  // (Discord 클라이언트 캐시가 첫 요청 시점에 준비 안 됐을 수 있음)
+  const totalCh = totalChannelCount();
+  if (totalCh === 0 && state.config?.guildId) {
+    setTimeout(async () => {
+      await loadDiscordChannels();
+      renderChannels();
+    }, 1500);
+  }
 }
 
 // ── API helpers ──────────────────────────────────────────────
@@ -307,8 +317,18 @@ async function loadDiscordBots() {
 }
 async function loadDiscordChannels() {
   try {
-    state.channels = await api('GET', '/discord/channels');
-  } catch { state.channels = { categories: [], uncategorized: [] }; }
+    const data = await api('GET', '/discord/channels');
+    state.channels = data;
+  } catch (e) {
+    console.warn('채널 로드 실패:', e.message);
+    state.channels = { categories: [], uncategorized: [] };
+  }
+}
+
+function totalChannelCount() {
+  if (!state.channels) return 0;
+  return (state.channels.categories ?? []).flatMap(c => c.channels).length
+    + (state.channels.uncategorized ?? []).length;
 }
 
 async function refreshDiscord() {
@@ -966,7 +986,8 @@ async function saveSystem() {
 
   try {
     await api('PUT', '/config', cfg);
-    await loadConfig();
+    // guildId가 바뀌었을 수 있으므로 Discord 데이터도 다시 로드
+    await Promise.all([loadConfig(), loadDiscordBots(), loadDiscordChannels()]);
     toast('시스템 설정 저장 완료', 'success');
     closePanel();
   } catch(e) {

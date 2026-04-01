@@ -17,5 +17,7 @@ export function hotReloadAppConfig(appCfg: AppConfig, next: Partial<AppConfig>):
   if (next.channelLimits !== undefined) appCfg.channelLimits = next.channelLimits;
   if (next.toolBots !== undefined) appCfg.toolBots = next.toolBots;
   if (next.githubRepos !== undefined) appCfg.githubRepos = next.githubRepos;
+  if (next.guildId !== undefined) appCfg.guildId = next.guildId;
+  if (next.collabChannel !== undefined) appCfg.collabChannel = next.collabChannel;
   console.log('[Admin] 앱 설정 즉시 반영 완료');
 }
