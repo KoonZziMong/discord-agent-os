@@ -139,6 +139,21 @@ export class Agent {
   // ── Task Graph ────────────────────────────────────────────
 
   /**
+   * 재시작 후 미완료 그래프를 이어서 실행합니다.
+   * index.ts 기동 시 loadIncompleteGraphs()로 감지된 그래프에 호출됩니다.
+   */
+  async resumeTaskGraph(graph: TaskGraph, channel: TextChannel): Promise<void> {
+    graph.resetForResume();
+    console.log(`[${this.name}] 🔄 태스크 그래프 재개: ${graph.data.id}`);
+    await channel.send(`🔄 **[재개]** 봇 재시작으로 중단된 작업을 이어서 실행합니다.\n> ${graph.data.goal}`);
+    await runTaskGraph(
+      graph,
+      channel,
+      (task) => this.executeTask(task, graph, graph.data.channelId),
+    );
+  }
+
+  /**
    * 사용자의 목표를 Task Graph로 분해하고 순차 실행합니다.
    * router.ts에서 `!목표 <goal>` 명령 감지 시 호출됩니다.
    */

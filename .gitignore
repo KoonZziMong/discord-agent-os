@@ -43,6 +43,5 @@ out
 
 # Project-specific
 data/config.json
-data/db.sqlite
 data/tasks/
 .playwright-mcp/

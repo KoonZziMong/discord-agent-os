@@ -35,8 +35,14 @@ export interface AgentConfig {
   githubRepo?: string;
 }
 
+export interface CmdBotConfig {
+  discordToken: string;
+}
+
 export interface AppConfig {
   agents: AgentConfig[];
+  /** 슬래시 커맨드 전담 봇 설정 (없으면 커맨드 비활성화) */
+  cmdBot?: CmdBotConfig;
   collabChannel: string;
   adminPort: number;
   // 툴 봇 이름 → MCP 서버명 (또는 "computer")
@@ -46,6 +52,9 @@ export interface AppConfig {
   historyLimit: number;
   // 채널별 히스토리 개수 오버라이드 { channelId: limit }
   channelLimits: Record<string, number>;
+  // 글로벌 GitHub 레포 목록 ["owner/repo", ...]
+  // /github add 커맨드로 관리, /github set으로 채널별 기본 레포 지정
+  githubRepos: string[];
 }
 
 // 프로젝트 루트 (src/../)
@@ -90,9 +99,11 @@ export function loadConfig(): AppConfig {
     collabChannel: raw.collabChannel,
     adminPort: raw.adminPort ?? 3000,
     agents: raw.agents,
+    cmdBot: raw.cmdBot,
     toolBots: raw.toolBots ?? {},
     historyLimit: raw.historyLimit ?? 20,
     channelLimits: raw.channelLimits ?? {},
+    githubRepos: raw.githubRepos ?? [],
   };
 }
 

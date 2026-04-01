@@ -106,6 +106,30 @@ export class TaskGraph {
     return this.data.status === 'failed';
   }
 
+  /** 그래프를 취소합니다. pending/running 태스크를 모두 failed로 처리합니다. */
+  cancel(): void {
+    for (const task of this.data.tasks) {
+      if (task.status === 'pending' || task.status === 'running') {
+        task.status = 'failed';
+        task.error = '취소됨';
+        task.updatedAt = Date.now();
+      }
+    }
+    this.data.status = 'failed';
+    this.persist();
+  }
+
+  /** 재시작 후 재개를 위해 running 상태인 태스크를 pending으로 초기화합니다. */
+  resetForResume(): void {
+    for (const task of this.data.tasks) {
+      if (task.status === 'running') {
+        task.status = 'pending';
+        task.updatedAt = Date.now();
+      }
+    }
+    this.persist();
+  }
+
   private find(taskId: string): Task | undefined {
     return this.data.tasks.find((t) => t.id === taskId);
   }
