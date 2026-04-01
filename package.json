@@ -1,0 +1,25 @@
+{
+  "name": "discord-ai-team",
+  "version": "1.0.0",
+  "description": "Discord multi-persona AI team bot",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "build": "tsc",
+    "prod": "npm run build && pm2 start ecosystem.config.js",
+    "test:smoke": "ts-node test/smoke.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^2.1.89",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.0.0",
+    "openai": "^6.33.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  }
+}
