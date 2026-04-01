@@ -274,21 +274,15 @@ const state = {
 
 // ── Init ─────────────────────────────────────────────────────
 async function init() {
+  // Phase 1: config/status는 로컬 서버라 빠름 → 먼저 렌더
   await Promise.all([loadConfig(), loadStatus()]);
-  await Promise.all([loadDiscordBots(), loadDiscordChannels()]);
   renderBots();
   renderChannels();
   renderGuildBadge();
 
-  // 채널이 비어있고 guildId가 있으면 1.5초 후 자동 재시도
-  // (Discord 클라이언트 캐시가 첫 요청 시점에 준비 안 됐을 수 있음)
-  const totalCh = totalChannelCount();
-  if (totalCh === 0 && state.config?.guildId) {
-    setTimeout(async () => {
-      await loadDiscordChannels();
-      renderChannels();
-    }, 1500);
-  }
+  // Phase 2: Discord 데이터는 각자 완료되는 즉시 화면 갱신
+  loadDiscordBots().then(() => renderBots());
+  loadDiscordChannels().then(() => renderChannels());
 }
 
 // ── API helpers ──────────────────────────────────────────────
@@ -325,18 +319,19 @@ async function loadDiscordChannels() {
   }
 }
 
-function totalChannelCount() {
-  if (!state.channels) return 0;
-  return (state.channels.categories ?? []).flatMap(c => c.channels).length
-    + (state.channels.uncategorized ?? []).length;
-}
 
 async function refreshDiscord() {
   toast('Discord 정보 갱신 중...', 'info');
-  await Promise.all([loadDiscordBots(), loadDiscordChannels(), loadConfig(), loadStatus()]);
+  // config/status 먼저, 완료되면 즉시 렌더
+  await Promise.all([loadConfig(), loadStatus()]);
   renderBots();
   renderChannels();
   renderGuildBadge();
+  // Discord 데이터는 각자 완료 즉시 렌더
+  await Promise.all([
+    loadDiscordBots().then(() => renderBots()),
+    loadDiscordChannels().then(() => renderChannels()),
+  ]);
   toast('갱신 완료', 'success');
 }
 
