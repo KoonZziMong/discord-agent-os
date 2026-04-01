@@ -5,6 +5,7 @@
  *   /task list              — 최근 태스크 그래프 목록
  *   /task detail            — 드롭다운으로 그래프 선택 후 상세 보기
  *   /task cancel id:graphId — 실행 중인 그래프 취소
+ *   /task retry  id:graphId — 실패한 그래프 재시도 (봇 재시작 후 자동 재개)
  */
 
 const {
@@ -91,6 +92,14 @@ module.exports = {
       sub
         .setName('cancel')
         .setDescription('실행 중인 태스크 그래프를 취소합니다')
+        .addStringOption((opt) =>
+          opt.setName('id').setDescription('그래프 ID (/task list에서 확인)').setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('retry')
+        .setDescription('실패한 태스크 그래프를 재시도합니다 (봇 재시작 후 자동 재개)')
         .addStringOption((opt) =>
           opt.setName('id').setDescription('그래프 ID (/task list에서 확인)').setRequired(true),
         ),
@@ -184,6 +193,42 @@ module.exports = {
 
       return interaction.reply({
         content: `🛑 \`${graph.id.slice(0, 8)}...\` 취소 완료\n> ${graph.goal.slice(0, 80)}`,
+        ephemeral: true,
+      });
+    }
+
+    // ── retry ───────────────────────────────────────────────
+    if (sub === 'retry') {
+      const id = interaction.options.getString('id').trim();
+      const graph = loadGraph(id);
+
+      if (!graph) {
+        return interaction.reply({ content: `❌ 그래프를 찾을 수 없습니다: \`${id}\``, ephemeral: true });
+      }
+      if (graph.status !== 'failed') {
+        return interaction.reply({
+          content: `⚠️ 실패 상태가 아닌 그래프입니다. (현재: ${graph.status})`,
+          ephemeral: true,
+        });
+      }
+
+      // 실패한 태스크를 pending으로 초기화
+      for (const task of graph.tasks) {
+        if (task.status === 'failed') {
+          task.status = 'pending';
+          delete task.error;
+          task.updatedAt = Date.now();
+        }
+      }
+      graph.status = 'running';
+      fs.writeFileSync(path.join(TASKS_DIR, `${graph.id}.json`), JSON.stringify(graph, null, 2));
+
+      return interaction.reply({
+        content: [
+          `🔄 \`${graph.id.slice(0, 8)}...\` 재시도 준비 완료`,
+          `> ${graph.goal.slice(0, 80)}`,
+          `-# 봇을 재시작하면 자동으로 이어서 실행됩니다.`,
+        ].join('\n'),
         ephemeral: true,
       });
     }
