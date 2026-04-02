@@ -200,7 +200,7 @@ async function handleSetup(interaction) {
     for (let i = 0; i < 5; i++) {
       const response = await client.messages.create({
         model: cmdCfg.model,
-        max_tokens: 2048,
+        max_tokens: 4096,
         system: systemPrompt,
         tools,
         messages,
@@ -208,8 +208,11 @@ async function handleSetup(interaction) {
 
       console.log(`[/channel setup] LLM 응답 (${response.stop_reason})`);
 
-      if (response.stop_reason === 'end_turn') {
+      if (response.stop_reason === 'end_turn' || response.stop_reason === 'max_tokens') {
         raw = response.content.find((b) => b.type === 'text')?.text ?? '';
+        if (response.stop_reason === 'max_tokens') {
+          console.warn('[/channel setup] max_tokens 도달 — 응답이 잘렸을 수 있음');
+        }
         break;
       }
 
@@ -252,7 +255,7 @@ async function handleSetup(interaction) {
       parsed = JSON.parse(jsonMatch[1].trim());
     } catch {
       console.error('[/channel setup] JSON 파싱 실패:', raw.slice(0, 200));
-      return interaction.editReply({ content: `❌ LLM 응답 파싱 실패:\n\`\`\`\n${raw.slice(0, 500)}\n\`\`\`` });
+      return interaction.editReply({ content: `**지시사항:** ${instruction}\n\n❌ LLM 응답 파싱 실패:\n\`\`\`\n${raw.slice(0, 500)}\n\`\`\`` });
     }
 
     const { topic, pins } = parsed;
@@ -288,6 +291,6 @@ async function handleSetup(interaction) {
     });
   } catch (err) {
     console.error('[/channel setup] 오류:', err);
-    await interaction.editReply({ content: `❌ 오류: ${err.message}` });
+    await interaction.editReply({ content: `**지시사항:** ${instruction}\n\n❌ 오류: ${err.message}` });
   }
 }
