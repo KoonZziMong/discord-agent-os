@@ -92,6 +92,7 @@ label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom
 .bot-card .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; }
 .dot-green { background: var(--green); }
 .dot-grey { background: var(--text-muted); }
+.dot-yellow { background: #f0b429; }
 .add-card {
   width: 180px; border: 1px dashed var(--border); border-radius: var(--radius);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -232,8 +233,17 @@ label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom
     <span class="section-title">봇</span>
     <span class="section-count" id="bot-count">0</span>
     <div class="section-spacer"></div>
+    <button class="btn-ghost" style="font-size:12px;padding:4px 10px" onclick="openAddBotGuide()">+ 봇 추가</button>
   </div>
   <div class="bot-grid" id="bot-grid">
+    <div class="loading">불러오는 중...</div>
+  </div>
+
+  <!-- 커맨드봇 섹션 -->
+  <div class="section-header" style="margin-top:32px">
+    <span class="section-title">커맨드봇</span>
+  </div>
+  <div class="bot-grid" id="cmdbot-grid">
     <div class="loading">불러오는 중...</div>
   </div>
 
@@ -268,8 +278,9 @@ const state = {
   config: null,      // AppConfig (raw)
   channels: null,    // { categories, uncategorized }
   bots: [],          // discord bot members
+  commands: [],      // slash commands from commands/*.js
   status: null,      // /api/status
-  activePanel: null, // 'bot:id' | 'channel:id' | 'system'
+  activePanel: null, // 'bot:id' | 'channel:id' | 'cmdbot' | 'system'
 };
 
 // ── Init ─────────────────────────────────────────────────────
@@ -277,12 +288,14 @@ async function init() {
   // Phase 1: config/status는 로컬 서버라 빠름 → 먼저 렌더
   await Promise.all([loadConfig(), loadStatus()]);
   renderBots();
+  renderCmdBot();
   renderChannels();
   renderGuildBadge();
 
-  // Phase 2: Discord 데이터는 각자 완료되는 즉시 화면 갱신
+  // Phase 2: Discord/commands 데이터는 각자 완료되는 즉시 화면 갱신
   loadDiscordBots().then(() => renderBots());
   loadDiscordChannels().then(() => renderChannels());
+  loadCommands().then(() => renderCmdBot());
 }
 
 // ── API helpers ──────────────────────────────────────────────
@@ -318,6 +331,12 @@ async function loadDiscordChannels() {
     state.channels = { categories: [], uncategorized: [] };
   }
 }
+async function loadCommands() {
+  try {
+    const data = await api('GET', '/commands');
+    state.commands = data.commands ?? [];
+  } catch { state.commands = []; }
+}
 
 
 async function refreshDiscord() {
@@ -325,12 +344,14 @@ async function refreshDiscord() {
   // config/status 먼저, 완료되면 즉시 렌더
   await Promise.all([loadConfig(), loadStatus()]);
   renderBots();
+  renderCmdBot();
   renderChannels();
   renderGuildBadge();
-  // Discord 데이터는 각자 완료 즉시 렌더
+  // Discord/commands 데이터는 각자 완료 즉시 렌더
   await Promise.all([
     loadDiscordBots().then(() => renderBots()),
     loadDiscordChannels().then(() => renderChannels()),
+    loadCommands().then(() => renderCmdBot()),
   ]);
   toast('갱신 완료', 'success');
 }
@@ -349,50 +370,171 @@ function renderGuildBadge() {
 // ── Render Bots ──────────────────────────────────────────────
 function renderBots() {
   const grid = document.getElementById('bot-grid');
-  const agents = state.config?.agents ?? [];
   const statusAgents = state.status?.agents ?? [];
-  document.getElementById('bot-count').textContent = agents.length;
 
-  // discord bot 멤버와 매핑
-  const discordBotMap = {};
-  state.bots.forEach(b => { discordBotMap[b.id] = b; });
+  // agent.id === Discord user ID이므로 직접 매핑
+  const idToStatus = new Map(statusAgents.map(s => [s.id, s]));
 
+  const discordBots = state.bots.length > 0 ? state.bots : [];
+  const allBotIds = new Set([
+    ...discordBots.map(b => b.id),
+    ...(state.config?.agents ?? []).map(a => a.id),
+  ]);
+
+  document.getElementById('bot-count').textContent = allBotIds.size;
   grid.innerHTML = '';
-  agents.forEach(agent => {
-    const statusInfo = statusAgents.find(s => s.id === agent.id);
-    const online = statusInfo?.online ?? false;
-    const discordBot = state.bots.find(b =>
-      agent.discordToken && b.username // 토큰으로 매핑 불가, 이름으로 근사
-    );
+
+  for (const botId of allBotIds) {
+    const discordBot = discordBots.find(b => b.id === botId);
+    const cfg = (state.config?.agents ?? []).find(a => a.id === botId);
+    const status = idToStatus.get(botId);
+    const configured = !!cfg;
+    const online = status?.online ?? discordBot?.online ?? false;
+    const name = cfg?.name ?? discordBot?.displayName ?? discordBot?.username ?? botId;
+    const avatar = discordBot?.avatar ?? null;
+    const activeKey = configured ? 'bot:' + cfg.id : 'setup-bot:' + botId;
 
     const card = document.createElement('div');
-    card.className = 'bot-card' + (state.activePanel === 'bot:' + agent.id ? ' active' : '');
+    card.className = 'bot-card' + (state.activePanel === activeKey ? ' active' : '');
+    if (!configured) card.style.opacity = '0.75';
+
     card.innerHTML = `
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <div style="width:36px;height:36px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🤖</div>
-        <div>
-          <div class="bot-card-name">${esc(agent.name)}</div>
-          <div style="font-size:11px;color:var(--text-muted)">
-            <span class="status-dot ${online ? 'dot-green' : 'dot-grey'}"></span>
-            ${online ? '온라인' : '오프라인'}
+        <div style="width:36px;height:36px;border-radius:50%;background:var(--surface2);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">
+          ${avatar ? `<img src="${esc(avatar)}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.textContent='🤖'">` : '🤖'}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div class="bot-card-name">${esc(name)}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap">
+            <span style="font-size:11px;color:var(--text-muted)">
+              <span class="status-dot ${online ? 'dot-green' : 'dot-grey'}"></span>${online ? '온라인' : '오프라인'}
+            </span>
+            <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:var(--surface2);color:${configured ? 'var(--green)' : '#f0b429'}">${configured ? '설정됨' : '미설정'}</span>
           </div>
         </div>
       </div>
       <div class="bot-card-meta">
-        <div>${esc(agent.provider)} / <span class="model">${shortModel(agent.model)}</span></div>
-        ${agent.chatChannel ? `<div>${channelName(agent.chatChannel)}</div>` : '<div style="color:var(--text-muted)">채널 미설정</div>'}
-        ${agent.githubRepo ? `<div style="color:var(--accent)">${esc(agent.githubRepo)}</div>` : ''}
+        ${configured
+          ? `<div>${esc(cfg.provider || '?')} / <span class="model">${shortModel(cfg.model)}</span></div>
+             ${cfg.chatChannel ? `<div>${channelName(cfg.chatChannel)}</div>` : '<div style="color:var(--text-muted)">채널 미설정</div>'}
+             ${cfg.githubRepo ? `<div style="color:var(--accent)">${esc(cfg.githubRepo)}</div>` : ''}
+             ${!cfg.discordToken ? `<div style="color:#f0b429;font-size:11px">ⓘ Discord 토큰 없음 — 로그인 불가</div>` : ''}
+             ${!cfg.apiKey ? `<div style="color:#f0b429;font-size:11px">ⓘ API 키 없음 — LLM 연동 불가</div>` : ''}
+             ${!cfg.chatChannel ? `<div style="color:#f0b429;font-size:11px">ⓘ 채팅 채널 없음 — 메시지 수신 불가</div>` : ''}`
+          : `<div style="color:var(--text-muted);font-size:11px">클릭해서 설정</div>`
+        }
       </div>`;
-    card.onclick = () => openBotPanel(agent.id);
-    grid.appendChild(card);
-  });
 
-  // 봇 추가 카드
-  const addCard = document.createElement('div');
-  addCard.className = 'add-card';
-  addCard.innerHTML = `<div class="add-card-icon">+</div><div class="add-card-label">봇 등록</div>`;
-  addCard.onclick = openAddBotPanel;
-  grid.appendChild(addCard);
+    card.onclick = configured
+      ? () => openBotPanel(cfg.id)
+      : () => openSetupBotPanel(discordBot);
+    grid.appendChild(card);
+  }
+}
+
+// ── Render CmdBot ────────────────────────────────────────────
+function renderCmdBot() {
+  const grid = document.getElementById('cmdbot-grid');
+  if (!grid) return;
+
+  const hasCmdBot = !!state.config?.cmdBot?.discordToken;
+  grid.innerHTML = '';
+
+  if (!hasCmdBot) {
+    const emptyCard = document.createElement('div');
+    emptyCard.className = 'add-card';
+    emptyCard.innerHTML = `<div class="add-card-icon">⚡</div><div class="add-card-label">커맨드봇 설정</div>`;
+    emptyCard.onclick = openCmdBotPanel;
+    grid.appendChild(emptyCard);
+    return;
+  }
+
+  // CmdBot 카드
+  const card = document.createElement('div');
+  card.className = 'bot-card' + (state.activePanel === 'cmdbot' ? ' active' : '');
+  card.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="width:36px;height:36px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚡</div>
+      <div>
+        <div class="bot-card-name">CmdBot</div>
+        <div style="font-size:11px;color:var(--text-muted)">슬래시 커맨드 봇</div>
+      </div>
+    </div>
+    <div class="bot-card-meta">
+      <div>커맨드 ${state.commands.length}개 등록</div>
+    </div>`;
+  card.onclick = openCmdBotPanel;
+  grid.appendChild(card);
+
+  // 커맨드 카드들
+  state.commands.forEach(cmd => {
+    const cmdCard = document.createElement('div');
+    cmdCard.className = 'bot-card';
+    cmdCard.style.cursor = 'default';
+    cmdCard.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="font-size:14px;font-weight:700;color:var(--accent)">/${esc(cmd.name)}</div>
+      </div>
+      <div class="bot-card-meta">
+        <div>${esc(cmd.description)}</div>
+        ${cmd.subcommands.length > 0
+          ? `<div style="color:var(--text-muted);font-size:11px;margin-top:4px">${cmd.subcommands.map(s => `<span style="display:inline-block;margin-right:4px">${esc(s.name)}</span>`).join('')}</div>`
+          : ''}
+      </div>`;
+    grid.appendChild(cmdCard);
+  });
+}
+
+function openCmdBotPanel() {
+  state.activePanel = 'cmdbot';
+  const cfg = state.config ?? {};
+
+  const cmdList = state.commands.length === 0
+    ? '<div style="color:var(--text-muted);font-size:13px;padding:8px 0">등록된 커맨드 없음</div>'
+    : state.commands.map(cmd => `
+      <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="font-weight:600;color:var(--accent);margin-bottom:2px">/${esc(cmd.name)}</div>
+        <div style="font-size:12px;color:var(--text-muted)">${esc(cmd.description)}</div>
+        ${cmd.subcommands.map(s => `
+          <div style="margin:4px 0 0 12px;font-size:12px">
+            <span style="color:var(--text-secondary)">/${esc(cmd.name)} ${esc(s.name)}</span>
+            <span style="color:var(--text-muted)"> — ${esc(s.description)}</span>
+          </div>`).join('')}
+      </div>`).join('');
+
+  openPanel(
+    '⚡ 커맨드봇',
+    `<div class="form-section">
+      <div class="form-section-title">봇 설정 ${restartBadge()}</div>
+      <div class="form-group">
+        <label>Discord 봇 토큰</label>
+        <input id="cb-token" type="password" value="${esc(cfg.cmdBot?.discordToken ?? '')}" placeholder="Discord Bot Token">
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">등록된 슬래시 커맨드</div>
+      ${cmdList}
+    </div>`,
+    `<button class="btn-ghost" onclick="closePanel()">취소</button>
+     <button class="btn-primary" onclick="saveCmdBot()">💾 저장</button>`
+  );
+  renderCmdBot();
+}
+
+async function saveCmdBot() {
+  const cfg = state.config;
+  const token = val('cb-token');
+  if (token && !token.includes('•')) {
+    cfg.cmdBot = { ...(cfg.cmdBot ?? {}), discordToken: token };
+  }
+  try {
+    await api('PUT', '/config', cfg);
+    await loadConfig();
+    toast('커맨드봇 설정 저장 완료 — 재시작 후 적용됩니다', 'success');
+    closePanel();
+  } catch(e) {
+    toast('저장 실패: ' + e.message, 'error');
+  }
 }
 
 // ── Render Channels ──────────────────────────────────────────
@@ -512,6 +654,7 @@ function closePanel() {
   document.getElementById('slide-panel').classList.remove('open');
   state.activePanel = null;
   renderBots();
+  renderCmdBot();
   renderChannels();
 }
 
@@ -535,8 +678,12 @@ function openBotPanel(agentId) {
       `<div class="form-section">
         <div class="form-section-title">기본</div>
         <div class="form-group">
+          <label>사용자 ID</label>
+          <input value="${esc(agentId)}" readonly style="opacity:0.6;cursor:default;font-family:monospace">
+        </div>
+        <div class="form-group">
           <label>표시 이름</label>
-          <input id="f-name" value="${esc(agent.name)}">
+          <input id="f-name" value="${esc(agent.name)}" readonly style="opacity:0.6;cursor:default">
         </div>
         <div class="form-group">
           <label>Discord 토큰 ${restartBadge()}</label>
@@ -680,35 +827,73 @@ function removeBotConfirm(agentId) {
     .catch(e => toast('오류: ' + e.message, 'error'));
 }
 
-// ── Add Bot Panel ──────────────────────────────────────────────
-function openAddBotPanel() {
-  state.activePanel = 'add-bot';
-  const discordBotOptions = state.bots.map(b =>
-    `<option value="${b.id}">${b.username} (${b.id})</option>`
-  ).join('');
+// ── Add Bot Guide ──────────────────────────────────────────────
+function openAddBotGuide() {
+  openPanel(
+    '+ 봇 추가 방법',
+    `<div class="form-section">
+      <div class="form-section-title">1. Discord 봇 계정 만들기</div>
+      <ol style="margin:0;padding-left:18px;line-height:2">
+        <li><a href="https://discord.com/developers/applications" target="_blank" style="color:var(--accent)">discord.com/developers/applications</a> 접속</li>
+        <li><b>New Application</b> 클릭 → 이름 입력 후 생성</li>
+        <li>좌측 메뉴 <b>Bot</b> 클릭</li>
+        <li><b>Reset Token</b>으로 토큰 발급 (나중에 여기서 입력)</li>
+        <li><b>Privileged Gateway Intents</b> 항목에서 아래 3가지 모두 활성화<br>
+          <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;display:inline-block;margin-top:4px">PRESENCE INTENT</code> — 유저 온라인 상태 감지<br>
+          <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;display:inline-block;margin-top:4px">SERVER MEMBERS INTENT</code> — 전체 멤버 목록 조회<br>
+          <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;display:inline-block;margin-top:4px">MESSAGE CONTENT INTENT</code> — 메시지 내용 읽기 (AI 응답 필수)</li>
+      </ol>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">2. 서버에 봇 초대</div>
+      <ol style="margin:0;padding-left:18px;line-height:2">
+        <li>좌측 메뉴 <b>OAuth2 → URL Generator</b> 클릭</li>
+        <li>Scopes에서 <code style="background:var(--surface2);padding:2px 6px;border-radius:4px">bot</code> 체크</li>
+        <li>Bot Permissions에서 <b>Send Messages</b>, <b>Read Message History</b>, <b>View Channels</b> 체크</li>
+        <li>생성된 URL을 브라우저에서 열어 이 서버에 초대</li>
+      </ol>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">3. 어드민 패널에서 설정</div>
+      <ol style="margin:0;padding-left:18px;line-height:2">
+        <li>우측 상단 <b>갱신</b> 버튼 클릭</li>
+        <li>봇 섹션에 <span style="color:#f0b429">●</span> <b>미설정</b> 카드로 등장</li>
+        <li>카드 클릭 → 토큰·채널·LLM 설정 입력 후 등록</li>
+        <li>봇 재시작 후 <span style="color:var(--green)">●</span> <b>온라인</b>으로 전환</li>
+      </ol>
+    </div>`,
+    `<button class="btn-primary" onclick="closePanel()">확인</button>`
+  );
+}
+
+// ── Setup Bot Panel ────────────────────────────────────────────
+function openSetupBotPanel(discordBot) {
+  state.activePanel = 'setup-bot:' + discordBot.id;
+  const autoId = discordBot.username.toLowerCase().replace(/[^a-z0-9]/g, '') || discordBot.id;
+  const autoName = discordBot.displayName || discordBot.username;
 
   openPanel(
-    '+ 봇 등록',
+    '🤖 봇 설정',
     `<div class="form-section">
-      <div class="form-section-title">Discord 봇 선택</div>
-      <div class="form-group">
-        <label>서버에 있는 봇</label>
-        <select id="nb-discord-bot">
-          <option value="">-- 선택 --</option>
-          ${discordBotOptions}
-        </select>
-        <span class="field-hint">봇이 보이지 않으면 먼저 Discord 서버에 초대하세요.</span>
+      <div class="form-section-title">Discord 봇 정보</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0">
+        <div style="width:40px;height:40px;border-radius:50%;background:var(--surface2);overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          ${discordBot.avatar ? `<img src="${esc(discordBot.avatar)}" style="width:100%;height:100%;object-fit:cover">` : '🤖'}
+        </div>
+        <div>
+          <div style="font-weight:600">${esc(autoName)}</div>
+          <div style="font-size:12px;color:var(--text-muted)">${esc(discordBot.username)}</div>
+        </div>
       </div>
-      <div class="form-group">
-        <label>에이전트 ID <span style="color:var(--text-muted)">(영문 소문자)</span></label>
-        <input id="nb-id" placeholder="예: aru">
-      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">에이전트 설정 ${restartBadge()}</div>
       <div class="form-group">
         <label>표시 이름</label>
-        <input id="nb-name" placeholder="예: 아루">
+        <input id="nb-name" value="${esc(autoName)}" readonly style="opacity:0.6;cursor:default">
       </div>
       <div class="form-group">
-        <label>Discord 토큰 ${restartBadge()}</label>
+        <label>Discord 봇 토큰</label>
         <input id="nb-token" type="password" placeholder="Bot Token">
       </div>
     </div>
@@ -722,7 +907,7 @@ function openAddBotPanel() {
       </div>
       <div class="form-group">
         <label>모델</label>
-        <input id="nb-model" placeholder="예: claude-sonnet-4-6" value="claude-sonnet-4-6">
+        <input id="nb-model" value="claude-sonnet-4-6" placeholder="예: claude-sonnet-4-6">
       </div>
       <div class="form-group">
         <label>API 키</label>
@@ -749,18 +934,20 @@ function openAddBotPanel() {
     <div class="form-section">
       <div class="form-section-title">페르소나</div>
       <div class="form-group">
-        <textarea id="nb-persona" placeholder="당신은 아루입니다..."></textarea>
+        <textarea id="nb-persona" placeholder="당신은 ...입니다."></textarea>
       </div>
     </div>`,
     `<button class="btn-ghost" onclick="closePanel()">취소</button>
      <button class="btn-primary" onclick="addBotSave()">등록</button>`
   );
+  renderBots();
 }
 
 async function addBotSave() {
-  const id = val('nb-id').trim();
-  if (!id) { toast('에이전트 ID를 입력하세요', 'error'); return; }
-  if (state.config.agents.find(a => a.id === id)) { toast('이미 존재하는 ID입니다', 'error'); return; }
+  // state.activePanel = 'setup-bot:{discordUserId}'
+  const id = state.activePanel?.replace('setup-bot:', '') ?? '';
+  if (!id) { toast('봇 정보를 찾을 수 없습니다', 'error'); return; }
+  if (state.config.agents.find(a => a.id === id)) { toast('이미 등록된 봇입니다', 'error'); return; }
 
   const newAgent = {
     id,
@@ -916,10 +1103,6 @@ function openSystemPanel() {
           ${allChannelOptions().replace(`value="${cfg.collabChannel}"`, `value="${cfg.collabChannel}" selected`)}
         </select>
       </div>
-      <div class="form-group">
-        <label>CmdBot 토큰</label>
-        <input id="s-cmdbot" type="password" value="${esc(cfg.cmdBot?.discordToken ?? '')}">
-      </div>
     </div>
 
     <div class="form-section">
@@ -1007,11 +1190,6 @@ async function saveSystem() {
     persona: splitTrimmed(val('s-cmd-persona')) || ['!페르소나', '!persona'],
     help:    splitTrimmed(val('s-cmd-help'))    || ['!도움말', '!help'],
   };
-
-  const cmdToken = val('s-cmdbot');
-  if (cmdToken && !cmdToken.includes('•')) {
-    cfg.cmdBot = { ...(cfg.cmdBot ?? {}), discordToken: cmdToken };
-  }
 
   try {
     await api('PUT', '/config', cfg);

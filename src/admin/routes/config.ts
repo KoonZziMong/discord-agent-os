@@ -14,6 +14,7 @@ import type { AppConfig, AgentConfig } from '../../config';
 import { saveConfig } from '../../config';
 import { hotReloadAgent, hotReloadAppConfig } from '../hotreload';
 import * as fs from 'fs';
+import * as path from 'path';
 
 function maskToken(val: string): string {
   if (!val || val.length < 8) return '••••••••';
@@ -80,6 +81,23 @@ export function createConfigRouter(agents: Agent[], appCfg: AppConfig) {
           next.cmdBot.discordToken,
           appCfg.cmdBot.discordToken,
         );
+      }
+
+      // 신규 에이전트 페르소나 파일 자동 생성 (없는 경우에만)
+      for (const agentNext of next.agents) {
+        const isNew = !appCfg.agents.find((a) => a.id === agentNext.id);
+        if (isNew && agentNext.personaFile) {
+          const dir = path.dirname(agentNext.personaFile);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          if (!fs.existsSync(agentNext.personaFile)) {
+            fs.writeFileSync(
+              agentNext.personaFile,
+              `# ${agentNext.name} 페르소나\n\n당신은 ${agentNext.name}입니다.\n`,
+              'utf-8',
+            );
+            console.log(`[Admin] 페르소나 파일 생성: ${agentNext.personaFile}`);
+          }
+        }
       }
 
       // 즉시 반영 가능한 항목 적용

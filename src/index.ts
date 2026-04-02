@@ -60,6 +60,7 @@ async function main(): Promise<void> {
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
       ],
     }),
   );
@@ -76,17 +77,16 @@ async function main(): Promise<void> {
 
   const primaryClient = clients[0];
 
-  // [5] 로그인 + 전체 ready 대기
-  //     ready 이벤트에서 botUserId를 기록하고 resolve합니다.
-  const readyPromises = clients.map((client, i) =>
-    new Promise<void>((resolve) => {
+  // [5] 로그인 + 전체 ready 대기 (discordToken 없는 봇은 건너뜀)
+  const readyPromises = clients.map((client, i) => {
+    if (!appCfg.agents[i].discordToken) return Promise.resolve();
+    return new Promise<void>((resolve) => {
       client.once(Events.ClientReady, (c) => {
-        agents[i].botUserId = c.user.id;
         console.log(`✅ ${agents[i].name} (${c.user.tag}) 온라인`);
         resolve();
       });
-    }),
-  );
+    });
+  });
 
   // CmdBot ready 대기
   const cmdReadyPromise = cmdClient
@@ -99,7 +99,7 @@ async function main(): Promise<void> {
     : Promise.resolve();
 
   await Promise.all([
-    ...appCfg.agents.map((cfg, i) => clients[i].login(cfg.discordToken)),
+    ...appCfg.agents.map((cfg, i) => cfg.discordToken ? clients[i].login(cfg.discordToken) : Promise.resolve()),
     ...(appCfg.cmdBot ? [cmdClient!.login(appCfg.cmdBot.discordToken)] : []),
   ]);
   await Promise.all([...readyPromises, cmdReadyPromise]);

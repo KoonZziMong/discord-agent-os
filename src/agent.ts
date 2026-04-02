@@ -37,7 +37,6 @@ export class Agent {
   config: AgentConfig;
   appCfg: AppConfig;         // 전역 설정 참조 (maxReviewRetries 등)
   botClient: Client;
-  botUserId = '';
 
   private llm: LLMClient;
   readonly mcpManager: AgentMCPManager;
@@ -88,7 +87,7 @@ export class Agent {
     try {
       const systemPrompt = this.buildSystemPrompt(mode);
       // 유저 메시지는 router.ts에서 이미 추가됨 → 히스토리에 포함되어 있음
-      const historyMessages = history.getHistory(message.channelId, this.botUserId, false);
+      const historyMessages = history.getHistory(message.channelId, this.id, false);
       const tools = mode === 'config' ? CONFIG_TOOLS : this.buildChatTools(services);
 
       const { text: responseText, usage } = await this.llm.chat(
@@ -99,7 +98,7 @@ export class Agent {
       );
 
       history.addMessage(message.channelId, {
-        authorId: this.botUserId,
+        authorId: this.id,
         authorName: this.name,
         content: responseText,
       });
@@ -142,7 +141,7 @@ export class Agent {
     services: string[] = [],
   ): Promise<string> {
     const systemPrompt = this.buildSystemPrompt('chat');
-    const historyMessages = history.getHistory(collabChannelId, this.botUserId, true);
+    const historyMessages = history.getHistory(collabChannelId, this.id, true);
 
     const { text } = await this.llm.chat(
       systemPrompt,

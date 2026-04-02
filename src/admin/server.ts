@@ -10,6 +10,7 @@
 
 import express from 'express';
 import * as path from 'path';
+import * as fs from 'fs';
 import type { Client } from 'discord.js';
 import type { Agent } from '../agent';
 import type { AppConfig } from '../config';
@@ -35,16 +36,55 @@ export function startAdminServer(
   app.use('/api/discord', createDiscordRouter(clients, appCfg));
   app.use('/api/config', createConfigRouter(agents, appCfg));
 
+  // 슬래시 커맨드 목록 (commands/*.js 파싱)
+  app.get('/api/commands', (_req, res) => {
+    const commandsDir = path.join(__dirname, '..', '..', 'commands');
+    if (!fs.existsSync(commandsDir)) {
+      res.json({ commands: [] });
+      return;
+    }
+    const files = fs.readdirSync(commandsDir).filter((f) => f.endsWith('.js'));
+    const commands = files.flatMap((file) => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const cmd = require(path.join(commandsDir, file));
+        const data = cmd.data?.toJSON ? cmd.data.toJSON() : cmd.data;
+        if (!data) return [];
+        return [{
+          name: data.name ?? file.replace('.js', ''),
+          description: data.description ?? '',
+          subcommands: (data.options ?? [])
+            .filter((o: { type: number }) => o.type === 1)
+            .map((o: { name: string; description: string }) => ({
+              name: o.name,
+              description: o.description,
+            })),
+        }];
+      } catch {
+        return [];
+      }
+    });
+    res.json({ commands });
+  });
+
   // 상태 확인
   app.get('/api/status', (_req, res) => {
+    // AI 봇 클라이언트에 속하지 않는 클라이언트(=CmdBot)를 찾아 user ID 포함
+    const cmdClient = clients.find((c) => !agents.some((a) => a.botClient === c));
+    const configuredBotIds = [
+      ...agents.map((a) => a.id),
+      ...(cmdClient?.user?.id ? [cmdClient.user.id] : []),
+    ];
+
     res.json({
       uptime: process.uptime(),
       agents: agents.map((a) => ({
         id: a.id,
         name: a.name,
-        online: !!a.botUserId,
+        online: !!a.botClient.user,
       })),
       guildId: appCfg.guildId ?? '',
+      configuredBotIds,
     });
   });
 

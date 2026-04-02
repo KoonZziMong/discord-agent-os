@@ -12,6 +12,7 @@
 import { Router } from 'express';
 import type { Client, Guild, GuildChannel } from 'discord.js';
 import { ChannelType } from 'discord.js';
+
 import type { AppConfig } from '../../config';
 
 export function createDiscordRouter(clients: Client[], appCfg: AppConfig) {
@@ -123,19 +124,25 @@ export function createDiscordRouter(clients: Client[], appCfg: AppConfig) {
         return;
       }
 
-      const members = await guild.members.fetch();
-      const bots = members
-        .filter((m) => m.user.bot)
-        .map((m) => ({
+      // list()는 REST API 사용 (게이트웨이 rate limit 없음)
+      const members = await guild.members.list({ limit: 1000 });
+      const botMembers = members.filter((m) => m.user?.bot);
+
+      // list()의 user 객체는 public_flags 없는 partial
+      // 캐시에 있는 user 데이터에서 flags 조회 (REST 호출 없음)
+      const client = clients.find((c) => c.guilds.cache.has(guild.id));
+
+      const bots = botMembers.map((m) => ({
           id: m.user.id,
           username: m.user.username,
           displayName: m.displayName,
           avatar: m.user.displayAvatarURL(),
-          online: m.presence?.status !== 'offline',
+          online: m.presence?.status != null && m.presence.status !== 'offline',
         }));
 
       res.json({ bots });
     } catch (err) {
+      console.error('[Admin /bots] 오류:', err);
       res.status(500).json({ error: String(err) });
     }
   });

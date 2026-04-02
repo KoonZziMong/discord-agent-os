@@ -244,7 +244,18 @@ function anthropicToOpenAITools(tools: Anthropic.Tool[]): OpenAI.ChatCompletionT
 
 // ── 팩토리 ────────────────────────────────────────────────
 
+/** apiKey 또는 model 미설정 시 호출마다 오류를 반환하는 더미 클라이언트 */
+class UnconfiguredLLMClient implements LLMClient {
+  constructor(private readonly agentName: string) {}
+  async chat(): Promise<ChatResult> {
+    throw new Error(`[${this.agentName}] API 키 또는 모델이 설정되지 않았습니다. 관리 페이지에서 설정해 주세요.`);
+  }
+}
+
 export function createLLMClient(cfg: AgentConfig): LLMClient {
+  if (!cfg.apiKey || !cfg.model) {
+    return new UnconfiguredLLMClient(cfg.name);
+  }
   if (cfg.provider === 'anthropic' && !cfg.baseUrl) {
     return new AnthropicClient(cfg.apiKey, cfg.model);
   }

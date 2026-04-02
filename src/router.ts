@@ -6,10 +6,10 @@
  *
  * 라우팅 규칙:
  *   1. 봇 자신의 메시지 → 무시
- *   2. 협력 채널       → 대표 봇(찌몽)만 collaboration.handle() 호출
+ *   2. 협력 채널       → agents[0](첫 번째 에이전트)의 봇만 collaboration.handle() 호출
  *                        (나머지 봇은 스킵 → 중복 응답 방지)
  *   3. 대화/설정 채널  → 해당 채널 담당 에이전트의 봇만 처리
- *                        (다른 봇은 botUserId 불일치로 스킵)
+ *                        (다른 봇은 agent.id 불일치로 스킵)
  *   4. 명령어(!페르소나, !도움말) → AI 호출 없이 즉시 응답
  *   5. 기타 채널       → 무시
  */
@@ -88,7 +88,7 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
 
     const channelId = message.channelId;
 
-    // 협력 채널 — 대표 봇(primaryClient)만 처리하여 중복 방지
+    // 협력 채널 — agents[0]의 봇(primaryClient)만 처리하여 중복 방지
     if (channelId === appCfg.collabChannel) {
       if (sourceClient.user?.id !== primaryClient.user?.id) return;
       // 유저 메시지를 히스토리에 추가
@@ -107,7 +107,7 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
     if (!entry) return;
 
     // 해당 채널 담당 에이전트의 봇인지 확인
-    if (sourceClient.user?.id !== entry.agent.botUserId) return;
+    if (sourceClient.user?.id !== entry.agent.id) return;
 
     // 명령어 처리 (config.commands 기반)
     const trimmed = message.content.trim();

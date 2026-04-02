@@ -101,9 +101,15 @@ export function loadConfig(): AppConfig {
   }
 
   for (const a of raw.agents) {
-    for (const key of ['id', 'name', 'discordToken', 'provider', 'apiKey', 'model'] as const) {
+    // id, name은 식별자이므로 필수
+    for (const key of ['id', 'name'] as const) {
       if (!a[key]) throw new Error(`config.json: agents[${a.id ?? '?'}].${key} 누락`);
     }
+    // 나머지 필드는 선택적 — 없으면 해당 기능만 비활성화
+    if (!a.discordToken) console.warn(`⚠️  agents[${a.id}]: discordToken 없음 — 로그인 건너뜀`);
+    if (!a.apiKey)       console.warn(`⚠️  agents[${a.id}]: apiKey 없음 — LLM 연동 불가`);
+    if (!a.model)        console.warn(`⚠️  agents[${a.id}]: model 없음 — LLM 연동 불가`);
+    if (!a.provider)     a.provider = 'anthropic'; // 기본값
     // personaFile: 상대 경로이면 프로젝트 루트 기준으로 절대 경로 변환
     a.personaFile = path.isAbsolute(a.personaFile)
       ? a.personaFile

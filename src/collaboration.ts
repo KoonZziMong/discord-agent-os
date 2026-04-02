@@ -1,12 +1,13 @@
 /**
  * collaboration.ts — 협력 채널 오케스트레이터
  *
- * 협력 채널(#협력-찌몽아루센세)에서 여러 에이전트가 순차적으로 응답하는 흐름을 관리합니다.
+ * 협력 채널에서 여러 에이전트가 순차적으로 응답하는 흐름을 관리합니다.
+ * 응답 순서는 config.json agents 배열 순서를 따릅니다.
  *
  * 멘션 기반 라우팅:
- *   @찌몽              → 찌몽만 응답
- *   @찌몽 @아루        → 찌몽 → 아루 순서로 응답
- *   멘션 없음          → 찌몽 → 아루 → 센세 전체 순차 응답
+ *   @에이전트A              → 해당 에이전트만 응답
+ *   @에이전트A @에이전트B   → agents 배열 순서대로 응답
+ *   멘션 없음               → 모든 에이전트 순차 응답 (agents 배열 순서)
  *
  * 히스토리 흐름:
  *   유저 메시지     : router.ts에서 history.addMessage() 완료 후 호출됨
@@ -25,14 +26,14 @@ export async function handle(
   toolServices: string[] = [],
 ): Promise<void> {
   // 에이전트 봇 ID 기준으로 대상 필터링 (툴봇 멘션은 toolServices로 분리됨)
-  const agentUserIds = agents.map((a) => a.botUserId);
+  const agentUserIds = agents.map((a) => a.id);
   const mentionedIds = [...message.mentions.users.keys()].filter((id) =>
     agentUserIds.includes(id),
   );
 
   const targetAgents =
     mentionedIds.length > 0
-      ? agents.filter((a) => mentionedIds.includes(a.botUserId))
+      ? agents.filter((a) => mentionedIds.includes(a.id))
       : agents;
 
   if (targetAgents.length === 0) return;
@@ -56,7 +57,7 @@ export async function handle(
 
       // 이 에이전트 응답을 히스토리에 추가 → 다음 에이전트가 참조
       history.addMessage(collabChannelId, {
-        authorId: agent.botUserId,
+        authorId: agent.id,
         authorName: agent.name,
         content: responseText,
       });
