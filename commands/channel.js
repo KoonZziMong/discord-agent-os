@@ -123,15 +123,40 @@ async function handleSetup(interaction) {
     return interaction.editReply({ content: '❌ CmdBot LLM 설정이 없습니다. config.json에 apiKey와 model을 추가하세요.' });
   }
 
-  await interaction.editReply({ content: '⏳ LLM이 채널 컨텍스트를 생성 중...' });
+  await interaction.editReply({ content: '⏳ 채널 정보 수집 중...' });
 
   try {
+    // 채널 최근 메시지 + 현재 토픽/핀 수집
+    const [recentMsgs, pinnedMsgs] = await Promise.all([
+      channel.messages.fetch({ limit: 30 }),
+      channel.messages.fetchPinned(),
+    ]);
+
+    const recentText = [...recentMsgs.values()]
+      .reverse()
+      .map((m) => `[${m.author.username}]: ${m.content}`)
+      .join('\n');
+
+    const pinnedText = [...pinnedMsgs.values()]
+      .reverse()
+      .map((m, i) => `[핀${i + 1}] ${m.content}`)
+      .join('\n\n');
+
+    const channelInfo = [
+      `채널명: #${channel.name}`,
+      channel.topic ? `현재 토픽: ${channel.topic}` : '현재 토픽: (없음)',
+      pinnedText ? `\n현재 고정 메시지:\n${pinnedText}` : '현재 고정 메시지: (없음)',
+      `\n최근 메시지 (오래된 순):\n${recentText || '(없음)'}`,
+    ].join('\n');
+
+    await interaction.editReply({ content: '⏳ LLM이 채널 컨텍스트를 생성 중...' });
+
     console.log(`[/channel setup] LLM 호출 시작 (${cmdCfg.model})`);
     const AnthropicClient = Anthropic.default ?? Anthropic;
     const client = new AnthropicClient({ apiKey: cmdCfg.apiKey });
 
     const systemPrompt = `당신은 Discord 채널 컨텍스트를 설계하는 전문가입니다.
-사용자의 지시사항을 바탕으로 채널 토픽과 핀 메시지 내용을 작성합니다.
+채널의 현재 상태(토픽, 고정 메시지, 최근 대화)를 참고하여 사용자의 지시사항을 수행합니다.
 
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 절대 포함하지 마세요:
 {
@@ -142,14 +167,16 @@ async function handleSetup(interaction) {
   ]
 }
 
-핀 메시지는 LLM의 system prompt로 주입됩니다. 마크다운 형식으로 작성하고, 역할/행동방식/규칙 등을 명확하게 서술하세요.
+핀 메시지는 이 채널에서 활동하는 AI 봇의 system prompt로 주입됩니다. 마크다운 형식으로 작성하고, 역할/행동방식/규칙 등을 명확하게 서술하세요.
 핀은 2~4개가 적당합니다.`;
+
+    const userMessage = `## 채널 현재 상태\n${channelInfo}\n\n## 지시사항\n${instruction}`;
 
     const response = await client.messages.create({
       model: cmdCfg.model,
       max_tokens: 2048,
       system: systemPrompt,
-      messages: [{ role: 'user', content: instruction }],
+      messages: [{ role: 'user', content: userMessage }],
     });
 
     const raw = response.content[0]?.text ?? '';
@@ -188,7 +215,7 @@ async function handleSetup(interaction) {
       console.log(`[/channel setup] 핀 메시지 ${i + 1}/${pins.length} 작성 중...`);
       const msg = await channel.send(pins[i]);
       await msg.pin().catch((err) => {
-        throw new Error(`핀 고정 실패 (메시지 관리 권한 필요): ${err.message}`);
+        throw new Error(`핀 고정 실패 (Discord 서버 설정 → CmdBot 역할 → "메시지 관리" 권한 필요): ${err.message}`);
       });
     }
 
