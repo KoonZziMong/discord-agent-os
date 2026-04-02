@@ -64,7 +64,7 @@ module.exports = {
 // ── /channel context ──────────────────────────────────────────
 
 async function handleContext(interaction) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: 64 });
 
   const channel = interaction.channel;
 
@@ -110,10 +110,12 @@ async function handleContext(interaction) {
 // ── /channel setup ────────────────────────────────────────────
 
 async function handleSetup(interaction) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: 64 });
 
   const channel = interaction.channel;
   const instruction = interaction.options.getString('instruction');
+
+  console.log(`[/channel setup] 실행 — 채널: #${channel.name}, 지시: ${instruction}`);
 
   // LLM 설정 확인
   const cmdCfg = loadCmdBotConfig();
@@ -124,7 +126,9 @@ async function handleSetup(interaction) {
   await interaction.editReply({ content: '⏳ LLM이 채널 컨텍스트를 생성 중...' });
 
   try {
-    const client = new Anthropic.default({ apiKey: cmdCfg.apiKey });
+    console.log(`[/channel setup] LLM 호출 시작 (${cmdCfg.model})`);
+    const AnthropicClient = Anthropic.default ?? Anthropic;
+    const client = new AnthropicClient({ apiKey: cmdCfg.apiKey });
 
     const systemPrompt = `당신은 Discord 채널 컨텍스트를 설계하는 전문가입니다.
 사용자의 지시사항을 바탕으로 채널 토픽과 핀 메시지 내용을 작성합니다.
@@ -149,12 +153,14 @@ async function handleSetup(interaction) {
     });
 
     const raw = response.content[0]?.text ?? '';
+    console.log(`[/channel setup] LLM 응답 수신 (${raw.length}자)`);
+
     let parsed;
     try {
-      // JSON 블록 추출 (```json ... ``` 감싸진 경우 대응)
       const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, raw];
       parsed = JSON.parse(jsonMatch[1].trim());
     } catch {
+      console.error('[/channel setup] JSON 파싱 실패:', raw.slice(0, 200));
       return interaction.editReply({ content: `❌ LLM 응답 파싱 실패:\n\`\`\`\n${raw.slice(0, 500)}\n\`\`\`` });
     }
 
@@ -163,6 +169,8 @@ async function handleSetup(interaction) {
       return interaction.editReply({ content: '❌ LLM이 올바른 형식으로 응답하지 않았습니다.' });
     }
 
+    console.log(`[/channel setup] 토픽: "${topic}", 핀 ${pins.length}개`);
+
     // 기존 핀 전부 해제
     const existing = await channel.messages.fetchPinned();
     for (const msg of existing.values()) {
@@ -170,13 +178,15 @@ async function handleSetup(interaction) {
     }
 
     // 토픽 설정
+    console.log('[/channel setup] 토픽 설정 중...');
     await channel.setTopic(topic).catch((err) => {
       throw new Error(`토픽 설정 실패 (채널 관리 권한 필요): ${err.message}`);
     });
 
     // 새 핀 메시지 작성 + 고정
-    for (const pinContent of pins) {
-      const msg = await channel.send(pinContent);
+    for (let i = 0; i < pins.length; i++) {
+      console.log(`[/channel setup] 핀 메시지 ${i + 1}/${pins.length} 작성 중...`);
+      const msg = await channel.send(pins[i]);
       await msg.pin().catch((err) => {
         throw new Error(`핀 고정 실패 (메시지 관리 권한 필요): ${err.message}`);
       });
@@ -186,6 +196,7 @@ async function handleSetup(interaction) {
       content: `✅ 채널 컨텍스트 설정 완료\n- 토픽: ${topic}\n- 핀 메시지: ${pins.length}개`,
     });
   } catch (err) {
+    console.error('[/channel setup] 오류:', err);
     await interaction.editReply({ content: `❌ 오류: ${err.message}` });
   }
 }
