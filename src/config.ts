@@ -39,6 +39,16 @@ export interface CmdBotConfig {
   discordToken: string;
 }
 
+/** 채팅 명령어 prefix 설정 */
+export interface CommandsConfig {
+  /** 페르소나 조회 명령어 목록 (기본: ["!페르소나", "!persona"]) */
+  persona: string[];
+  /** 도움말 명령어 목록 (기본: ["!도움말", "!help"]) */
+  help: string[];
+  /** 태스크 목표 실행 prefix 목록 (기본: ["!목표", "!task"]) */
+  task: string[];
+}
+
 export interface AppConfig {
   agents: AgentConfig[];
   /** 슬래시 커맨드 전담 봇 설정 (없으면 커맨드 비활성화) */
@@ -59,6 +69,8 @@ export interface AppConfig {
   // 글로벌 GitHub 레포 목록 ["owner/repo", ...]
   // /github add 커맨드로 관리, /github set으로 채널별 기본 레포 지정
   githubRepos: string[];
+  /** 채팅 명령어 prefix 설정 */
+  commands: CommandsConfig;
 }
 
 // 프로젝트 루트 (src/../)
@@ -110,6 +122,11 @@ export function loadConfig(): AppConfig {
     historyLimit: raw.historyLimit ?? 20,
     channelLimits: raw.channelLimits ?? {},
     githubRepos: raw.githubRepos ?? [],
+    commands: {
+      persona: raw.commands?.persona ?? ['!페르소나', '!persona'],
+      help:    raw.commands?.help    ?? ['!도움말', '!help'],
+      task:    raw.commands?.task    ?? ['!목표', '!task'],
+    },
   };
 }
 

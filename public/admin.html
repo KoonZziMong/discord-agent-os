@@ -947,6 +947,23 @@ function openSystemPanel() {
       <div class="form-section-title">툴봇 매핑 ${hotBadge()}</div>
       <div class="kv-list" id="toolbot-list">${toolBotRows}</div>
       <button class="btn-ghost" style="width:100%;margin-top:6px" onclick="addToolBotRow()">+ 매핑 추가</button>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">명령어 prefix ${hotBadge()}</div>
+      <span class="field-hint" style="margin-bottom:8px;display:block">여러 개는 쉼표로 구분 (예: !목표, !task)</span>
+      <div class="form-group">
+        <label>태스크 실행</label>
+        <input id="s-cmd-task" value="${esc((cfg.commands?.task ?? ['!목표','!task']).join(', '))}">
+      </div>
+      <div class="form-group">
+        <label>페르소나 조회</label>
+        <input id="s-cmd-persona" value="${esc((cfg.commands?.persona ?? ['!페르소나','!persona']).join(', '))}">
+      </div>
+      <div class="form-group">
+        <label>도움말</label>
+        <input id="s-cmd-help" value="${esc((cfg.commands?.help ?? ['!도움말','!help']).join(', '))}">
+      </div>
     </div>`,
 
     `<button class="btn-ghost" onclick="closePanel()">취소</button>
@@ -973,6 +990,11 @@ async function saveSystem() {
   cfg.adminHost = val('s-host') || '127.0.0.1';
   cfg.historyLimit = parseInt(val('s-hist')) || 20;
   cfg.toolBots = collectKvList('toolbot-list');
+  cfg.commands = {
+    task:    splitTrimmed(val('s-cmd-task'))    || ['!목표', '!task'],
+    persona: splitTrimmed(val('s-cmd-persona')) || ['!페르소나', '!persona'],
+    help:    splitTrimmed(val('s-cmd-help'))    || ['!도움말', '!help'],
+  };
 
   const cmdToken = val('s-cmdbot');
   if (cmdToken && !cmdToken.includes('•')) {
@@ -994,6 +1016,9 @@ async function saveSystem() {
 function val(id) {
   const el = document.getElementById(id);
   return el ? el.value : '';
+}
+function splitTrimmed(str) {
+  return str.split(',').map(s => s.trim()).filter(Boolean);
 }
 function collectKvList(listId) {
   const result = {};

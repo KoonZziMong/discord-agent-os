@@ -35,40 +35,38 @@ function extractToolServices(message: Message, toolBots: Record<string, string>)
   return services;
 }
 
-const COMMANDS: Record<string, string> = {
-  '!페르소나': '페르소나',
-  '!persona': '페르소나',
-  '!도움말': '도움말',
-  '!help': '도움말',
-};
-
-async function handleCommand(cmd: string, agent: Agent, message: Message): Promise<void> {
+async function handleCommand(cmd: 'persona' | 'help', agent: Agent, message: Message, appCfg: AppConfig): Promise<void> {
   const channel = message.channel as TextChannel;
 
-  if (cmd === '페르소나') {
+  if (cmd === 'persona') {
     const content = load(agent.config.personaFile);
     await sendSplit(channel, `**${agent.name}의 현재 페르소나**\n\`\`\`markdown\n${content}\n\`\`\``);
     return;
   }
 
-  if (cmd === '도움말') {
+  if (cmd === 'help') {
+    const cmds = appCfg.commands;
+    const agentNames = appCfg.agents.map((a) => `@${a.name}`);
+    const taskPrefixes = cmds.task.map((p) => `\`${p}\``).join(' / ');
+    const personaPrefixes = cmds.persona.map((p) => `\`${p}\``).join(' / ');
+    const helpPrefixes = cmds.help.map((p) => `\`${p}\``).join(' / ');
+
     const help = [
       `**${agent.name} 사용 가이드**`,
       '',
-      '**대화 채널** (`#대화-*`)',
-      '→ 자유롭게 대화하세요.',
-      '→ `!페르소나` — 현재 페르소나 확인',
-      '→ `!도움말` — 이 메시지 표시',
+      '**대화 채널**',
+      `→ 자유롭게 대화하세요.`,
+      `→ ${taskPrefixes} <목표> — AI가 자동으로 작업을 수행합니다`,
+      `→ ${personaPrefixes} — 현재 페르소나 확인`,
+      `→ ${helpPrefixes} — 이 메시지 표시`,
       '',
-      '**설정 채널** (`#설정-*`)',
+      '**설정 채널**',
       '→ 자연어로 지시하면 페르소나가 수정됩니다.',
-      '→ 예시: `앞으로 답변할 때 항상 예시 코드를 포함해줘`',
-      '→ `!페르소나` — 현재 페르소나 확인',
+      `→ ${personaPrefixes} — 현재 페르소나 확인`,
       '',
-      '**협력 채널** (`#협력-*`)',
-      '→ `@찌몽 질문` — 특정 에이전트 지목',
-      '→ `@찌몽 @아루 질문` — 복수 에이전트 지목 (순서대로 응답)',
-      '→ 멘션 없이 메시지 — 전체(찌몽→아루→센세) 순차 응답',
+      '**협력 채널**',
+      `→ ${agentNames.slice(0, 2).join(', ')} 등 멘션 — 해당 에이전트 지목 (순서대로 응답)`,
+      '→ 멘션 없이 메시지 — 모든 에이전트 순차 응답',
     ].join('\n');
     await channel.send(help);
     return;
@@ -111,20 +109,27 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
     // 해당 채널 담당 에이전트의 봇인지 확인
     if (sourceClient.user?.id !== entry.agent.botUserId) return;
 
-    // 명령어 처리 (!페르소나, !도움말 등)
+    // 명령어 처리 (config.commands 기반)
     const trimmed = message.content.trim();
-    const cmd = COMMANDS[trimmed];
-    if (cmd) {
-      await handleCommand(cmd, entry.agent, message);
+    const cmds = appCfg.commands;
+
+    if (cmds.persona.includes(trimmed)) {
+      await handleCommand('persona', entry.agent, message, appCfg);
+      return;
+    }
+    if (cmds.help.includes(trimmed)) {
+      await handleCommand('help', entry.agent, message, appCfg);
       return;
     }
 
-    // 태스크 목표 감지 (!목표 <goal> 또는 !task <goal>)
-    const goalMatch = trimmed.match(/^(?:!목표|!task)\s+(.+)/s);
-    if (goalMatch && entry.mode === 'chat') {
-      const goal = goalMatch[1].trim();
-      await entry.agent.startTaskGraph(message, goal);
-      return;
+    // 태스크 목표 감지 (config.commands.task prefix)
+    const taskPrefix = cmds.task.find((p) => trimmed.startsWith(p + ' '));
+    if (taskPrefix && entry.mode === 'chat') {
+      const goal = trimmed.slice(taskPrefix.length).trim();
+      if (goal) {
+        await entry.agent.startTaskGraph(message, goal);
+        return;
+      }
     }
 
     // 유저 메시지를 히스토리에 추가 (설정 채널은 addMessage가 자동으로 무시)
