@@ -60,12 +60,15 @@ export async function loadFromDiscord(channel: TextChannel, limit: number): Prom
 
 /**
  * 채널에 메시지를 추가합니다.
- * 채널이 초기화되지 않은 경우(설정 채널 등) 조용히 무시합니다.
+ * 채널이 초기화되지 않은 경우 기본 limit으로 자동 초기화합니다.
  * limit 초과 시 가장 오래된 메시지를 제거합니다.
  */
-export function addMessage(channelId: string, msg: StoredMessage): void {
-  const store = channelStore.get(channelId);
-  if (!store) return;
+export function addMessage(channelId: string, msg: StoredMessage, defaultLimit = 20): void {
+  let store = channelStore.get(channelId);
+  if (!store) {
+    store = { messages: [], limit: defaultLimit };
+    channelStore.set(channelId, store);
+  }
 
   store.messages.push(msg);
   if (store.messages.length > store.limit) {

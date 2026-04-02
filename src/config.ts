@@ -37,6 +37,9 @@ export interface AgentConfig {
 
 export interface CmdBotConfig {
   discordToken: string;
+  provider?: string;
+  apiKey?: string;
+  model?: string;
 }
 
 /** 채팅 명령어 prefix 설정 */

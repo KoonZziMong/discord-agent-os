@@ -14,6 +14,7 @@ import { handle as handleCollab } from './collaboration';
 import { load } from './persona';
 import { sendSplit } from './utils';
 import * as history from './history';
+import { loadChannelContext, getChannelContext } from './channelContext';
 
 /**
  * 메시지에서 @툴봇 멘션을 찾아 활성화할 서비스 목록을 반환합니다.
@@ -84,6 +85,12 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
       (a) => a.botClient === sourceClient && message.mentions.users.has(a.id),
     );
     if (!mentionedAgent) return;
+
+    // 처음 방문하는 채널이면 채널 컨텍스트 자동 로드
+    const ctx = getChannelContext(channelId);
+    if (ctx.topic === '' && ctx.pins.length === 0) {
+      await loadChannelContext(message.channel as TextChannel).catch(() => {});
+    }
 
     const trimmed = message.content.trim();
     const cmds = appCfg.commands;

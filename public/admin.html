@@ -512,6 +512,23 @@ function openCmdBotPanel() {
       </div>
     </div>
     <div class="form-section">
+      <div class="form-section-title">LLM 설정 ${hotBadge()}</div>
+      <div class="form-group">
+        <label>Provider</label>
+        <select id="cb-provider">
+          ${['anthropic','openai','gemini','minimax'].map(p => `<option ${(cfg.cmdBot?.provider ?? 'anthropic') === p ? 'selected' : ''}>${p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>API 키</label>
+        <input id="cb-apikey" type="password" value="${esc(cfg.cmdBot?.apiKey ?? '')}" placeholder="API Key">
+      </div>
+      <div class="form-group">
+        <label>모델</label>
+        <input id="cb-model" value="${esc(cfg.cmdBot?.model ?? '')}" placeholder="claude-sonnet-4-6">
+      </div>
+    </div>
+    <div class="form-section">
       <div class="form-section-title">등록된 슬래시 커맨드</div>
       ${cmdList}
     </div>`,
@@ -523,14 +540,23 @@ function openCmdBotPanel() {
 
 async function saveCmdBot() {
   const cfg = state.config;
-  const token = val('cb-token');
-  if (token && !token.includes('•')) {
-    cfg.cmdBot = { ...(cfg.cmdBot ?? {}), discordToken: token };
-  }
+  const token    = val('cb-token');
+  const provider = val('cb-provider');
+  const apiKey   = val('cb-apikey');
+  const model    = val('cb-model');
+
+  cfg.cmdBot = {
+    ...(cfg.cmdBot ?? {}),
+    ...(token  && !token.includes('•')  ? { discordToken: token }  : {}),
+    ...(provider                         ? { provider }             : {}),
+    ...(apiKey && !apiKey.includes('•') ? { apiKey }               : {}),
+    ...(model                            ? { model }                : {}),
+  };
+
   try {
     await api('PUT', '/config', cfg);
     await loadConfig();
-    toast('커맨드봇 설정 저장 완료 — 재시작 후 적용됩니다', 'success');
+    toast('커맨드봇 설정 저장 완료', 'success');
     closePanel();
   } catch(e) {
     toast('저장 실패: ' + e.message, 'error');

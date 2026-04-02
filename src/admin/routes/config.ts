@@ -40,7 +40,11 @@ export function createConfigRouter(agents: Agent[], appCfg: AppConfig) {
     res.json({
       ...appCfg,
       cmdBot: appCfg.cmdBot
-        ? { discordToken: maskToken(appCfg.cmdBot.discordToken) }
+        ? {
+            ...appCfg.cmdBot,
+            discordToken: maskToken(appCfg.cmdBot.discordToken),
+            apiKey: appCfg.cmdBot.apiKey ? maskToken(appCfg.cmdBot.apiKey) : '',
+          }
         : undefined,
       agents: appCfg.agents.map(maskAgentConfig),
     });
@@ -78,9 +82,12 @@ export function createConfigRouter(agents: Agent[], appCfg: AppConfig) {
 
       if (next.cmdBot && appCfg.cmdBot) {
         next.cmdBot.discordToken = restore(
-          next.cmdBot.discordToken,
+          next.cmdBot.discordToken ?? '',
           appCfg.cmdBot.discordToken,
         );
+        if (next.cmdBot.apiKey !== undefined) {
+          next.cmdBot.apiKey = restore(next.cmdBot.apiKey, appCfg.cmdBot.apiKey ?? '');
+        }
       }
 
       // 신규 에이전트 페르소나 파일 자동 생성 (없는 경우에만)
