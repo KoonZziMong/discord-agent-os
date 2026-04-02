@@ -123,7 +123,7 @@ async function handleSetup(interaction) {
     return interaction.editReply({ content: '❌ CmdBot LLM 설정이 없습니다. config.json에 apiKey와 model을 추가하세요.' });
   }
 
-  await interaction.editReply({ content: '⏳ 채널 정보 수집 중...' });
+  await interaction.editReply({ content: `**지시사항:** ${instruction}\n\n⏳ 채널 정보 수집 중...` });
 
   try {
     // 현재 핀 메시지만 미리 로드 (토픽은 channel.topic으로 바로 접근)
@@ -142,7 +142,7 @@ async function handleSetup(interaction) {
         : '현재 고정 메시지: (없음)',
     ].join('\n');
 
-    await interaction.editReply({ content: '⏳ LLM이 채널 컨텍스트를 생성 중...' });
+    await interaction.editReply({ content: `**지시사항:** ${instruction}\n\n⏳ LLM이 채널 컨텍스트를 생성 중...` });
 
     console.log(`[/channel setup] LLM 호출 시작 (${cmdCfg.model})`);
     const AnthropicClient = Anthropic.default ?? Anthropic;
@@ -284,7 +284,7 @@ async function handleSetup(interaction) {
     }
 
     await interaction.editReply({
-      content: `✅ 채널 컨텍스트 설정 완료\n- 토픽: ${topic}\n- 핀 메시지: ${pins.length}개`,
+      content: `**지시사항:** ${instruction}\n\n✅ 완료 — 토픽 1개, 핀 메시지 ${pins.length}개 설정됨`,
     });
   } catch (err) {
     console.error('[/channel setup] 오류:', err);
