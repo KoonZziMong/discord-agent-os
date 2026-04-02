@@ -13,13 +13,14 @@
  *  [9] Graceful shutdown 핸들러 등록
  */
 
-import { Client, GatewayIntentBits, Events, TextChannel, ChatInputCommandInteraction, StringSelectMenuInteraction, Collection } from 'discord.js';
+import { Client, GatewayIntentBits, Events, TextChannel, BaseGuildTextChannel, ChatInputCommandInteraction, StringSelectMenuInteraction, Collection } from 'discord.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { loadConfig } from './config';
 import { Agent } from './agent';
 import { createRouter } from './router';
 import { loadFromDiscord } from './history';
+import { loadChannelContext, updateTopic, refreshPins } from './channelContext';
 import { TaskGraph } from './task/graph';
 import { loadIncompleteGraphs } from './task/store';
 import { startAdminServer } from './admin/server';
@@ -109,20 +110,21 @@ async function main(): Promise<void> {
   const getLimit = (channelId: string) =>
     appCfg.channelLimits[channelId] ?? appCfg.historyLimit;
 
-  const historyChannels = [
-    ...appCfg.agents.map((a) => a.chatChannel),
+  const historyChannels: string[] = [
+    ...appCfg.agents.map((a) => a.chatChannel).filter((c): c is string => !!c),
     appCfg.collabChannel,
   ];
 
-  console.log('📂 히스토리 로드 중...');
+  console.log('📂 히스토리 + 채널 컨텍스트 로드 중...');
   await Promise.allSettled(
     historyChannels.map(async (channelId) => {
       try {
         const channel = await primaryClient.channels.fetch(channelId) as TextChannel;
         await loadFromDiscord(channel, getLimit(channelId));
+        await loadChannelContext(channel);
       } catch (err: unknown) {
         console.warn(
-          `⚠️  히스토리 로드 실패 (${channelId}):`,
+          `⚠️  채널 로드 실패 (${channelId}):`,
           err instanceof Error ? err.message : err,
         );
       }
@@ -161,6 +163,25 @@ async function main(): Promise<void> {
       });
     });
   }
+
+  // 채널 컨텍스트 갱신 이벤트 (primaryClient 하나만 리스닝)
+  primaryClient.on(Events.ChannelUpdate, (_old, newChannel) => {
+    if (newChannel instanceof BaseGuildTextChannel) {
+      updateTopic(newChannel.id, newChannel.topic ?? '');
+    }
+  });
+
+  primaryClient.on(Events.ChannelPinsUpdate, (channel) => {
+    if (channel instanceof BaseGuildTextChannel) {
+      refreshPins(channel as TextChannel).catch(() => {});
+    }
+  });
+
+  primaryClient.on(Events.MessageUpdate, (_old, newMsg) => {
+    if (newMsg.pinned && newMsg.channel instanceof BaseGuildTextChannel) {
+      refreshPins(newMsg.channel as TextChannel).catch(() => {});
+    }
+  });
 
   // [8] interactionCreate — CmdBot 전담 처리 (AI 봇은 커맨드 처리 안 함)
   if (cmdClient) {

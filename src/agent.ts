@@ -22,6 +22,7 @@ import { AgentMCPManager } from './mcp';
 import { computerAction, executeBash, executeTextEditor } from './computer';
 import * as history from './history';
 import * as persona from './persona';
+import { getChannelContext, buildContextBlock } from './channelContext';
 import { CONFIG_TOOLS, CHAT_TOOLS, COMPUTER_USE_TOOLS, CLAUDE_CODE_TOOL, type AnyTool } from './tools';
 import { runClaudeCode } from './claude-code';
 import { sendSplit, getErrorMessage, delay, keepTyping } from './utils';
@@ -85,7 +86,7 @@ export class Agent {
 
     const stopTyping = keepTyping(channel);
     try {
-      const systemPrompt = this.buildSystemPrompt(mode);
+      const systemPrompt = this.buildSystemPrompt(mode, message.channelId);
       // 유저 메시지는 router.ts에서 이미 추가됨 → 히스토리에 포함되어 있음
       const historyMessages = history.getHistory(message.channelId, this.id, false);
       const tools = mode === 'config' ? CONFIG_TOOLS : this.buildChatTools(services);
@@ -140,7 +141,7 @@ export class Agent {
     collabChannelId: string,
     services: string[] = [],
   ): Promise<string> {
-    const systemPrompt = this.buildSystemPrompt('chat');
+    const systemPrompt = this.buildSystemPrompt('chat', collabChannelId);
     const historyMessages = history.getHistory(collabChannelId, this.id, true);
 
     const { text } = await this.llm.chat(
@@ -226,7 +227,7 @@ export class Agent {
       channelId,
       this.llm,
       this.name,
-      this.buildSystemPrompt('chat'),
+      this.buildSystemPrompt('chat', channelId),
       runClaudeCode,
       this.config.githubRepo,
       this.appCfg.maxReviewRetries,
@@ -265,9 +266,14 @@ export class Agent {
     return tools;
   }
 
-  private buildSystemPrompt(mode: 'chat' | 'config'): string {
+  private buildSystemPrompt(mode: 'chat' | 'config', channelId?: string): string {
     const personaContent = persona.load(this.config.personaFile);
     const base = `당신은 ${this.name}입니다.\n\n${personaContent}`;
+
+    // 채널 토픽 + 핀 메시지 컨텍스트
+    const channelCtxBlock = channelId
+      ? buildContextBlock(getChannelContext(channelId))
+      : '';
 
     const common =
       '\n\n---\n' +
@@ -277,7 +283,7 @@ export class Agent {
 
     if (mode === 'config') {
       return (
-        base + common +
+        base + channelCtxBlock + common +
         '\n\n---\n' +
         '## 설정 채널 지시사항\n' +
         '사용자가 이 채널에서 내리는 지시는 당신의 페르소나·규칙·기억을 수정하는 명령입니다.\n' +
@@ -285,7 +291,7 @@ export class Agent {
         '수정 완료 후 어떤 내용을 어떻게 변경했는지 한국어로 확인 메시지를 보내세요.'
       );
     }
-    return base + common;
+    return base + channelCtxBlock + common;
   }
 
   /**

@@ -12,12 +12,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 export interface AgentConfig {
-  id: string;            // "zzimong" | "aru" | "sense"
-  name: string;          // "찌몽" | "아루" | "센세"
+  id: string;            // Discord User ID
+  name: string;          // 표시 이름
   discordToken: string;  // Discord Bot Token
-  personaFile: string;   // 절대 경로 (loadConfig에서 해석)
-  configChannel: string;
-  chatChannel: string;
+  personaFile: string;   // 절대 경로 (loadConfig에서 해석) — 채널 핀 없을 때 폴백
+  configChannel?: string; // (레거시) 설정 전용 채널 — 사용 안 해도 됨
+  chatChannel?: string;   // (레거시) 전용 채팅 채널 — 사용 안 해도 됨
 
   // LLM 설정
   provider: string;      // "anthropic" | "openai" | "gemini" | "minimax"
