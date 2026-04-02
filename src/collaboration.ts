@@ -31,11 +31,10 @@ export async function handle(
     agentUserIds.includes(id),
   );
 
-  const targetAgents =
-    mentionedIds.length > 0
-      ? agents.filter((a) => mentionedIds.includes(a.id))
-      : agents;
+  // 멘션 없으면 응답 안 함 (멘션 기반 라우팅)
+  if (mentionedIds.length === 0) return;
 
+  const targetAgents = agents.filter((a) => mentionedIds.includes(a.id));
   if (targetAgents.length === 0) return;
 
   const order = targetAgents.map((a) => a.name).join(' → ');
