@@ -20,5 +20,6 @@ export function hotReloadAppConfig(appCfg: AppConfig, next: Partial<AppConfig>):
   if (next.guildId !== undefined) appCfg.guildId = next.guildId;
   if (next.collabChannel !== undefined) appCfg.collabChannel = next.collabChannel;
   if (next.commands !== undefined) appCfg.commands = next.commands;
+  if (next.maxReviewRetries !== undefined) appCfg.maxReviewRetries = next.maxReviewRetries;
   console.log('[Admin] 앱 설정 즉시 반영 완료');
 }

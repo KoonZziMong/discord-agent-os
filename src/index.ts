@@ -69,7 +69,7 @@ async function main(): Promise<void> {
     : null;
 
   // [3] Agent 인스턴스 생성
-  const agents = appCfg.agents.map((cfg, i) => new Agent(cfg, clients[i]));
+  const agents = appCfg.agents.map((cfg, i) => new Agent(cfg, clients[i], appCfg));
 
   // [4] 봇별 MCP 서버 초기화 (병렬)
   await Promise.all(agents.map((a) => a.mcpManager.init()));

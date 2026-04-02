@@ -26,8 +26,6 @@ import { developerNode } from './nodes/developerNode';
 import { reviewerNode } from './nodes/reviewerNode';
 import { testerNode } from './nodes/testerNode';
 
-const MAX_REVIEW_RETRIES = 2;
-
 export async function executeWorkflow(
   task: Task,
   graphId: string,
@@ -37,6 +35,7 @@ export async function executeWorkflow(
   agentSystemPrompt: string,
   runCode: (input: ClaudeCodeInput) => Promise<ClaudeCodeResult>,
   githubRepo?: string,
+  maxReviewRetries = 2,
 ): Promise<WorkflowResult> {
   const ctx: WorkflowContext = {
     task,
@@ -58,8 +57,8 @@ export async function executeWorkflow(
   let reviewFeedback = '';
   let approved = false;
 
-  for (let attempt = 0; attempt <= MAX_REVIEW_RETRIES; attempt++) {
-    console.log(`[${agentName}] 💻 [${task.id}] Developer 실행 중... (시도 ${attempt + 1}/${MAX_REVIEW_RETRIES + 1})`);
+  for (let attempt = 0; attempt <= maxReviewRetries; attempt++) {
+    console.log(`[${agentName}] 💻 [${task.id}] Developer 실행 중... (시도 ${attempt + 1}/${maxReviewRetries + 1})`);
     devResult = await developerNode(
       ctx,
       plan,
@@ -77,8 +76,8 @@ export async function executeWorkflow(
       break;
     }
 
-    if (attempt < MAX_REVIEW_RETRIES) {
-      console.log(`[${agentName}] 🔄 [${task.id}] 리뷰 재작업 요청 (${attempt + 1}/${MAX_REVIEW_RETRIES})`);
+    if (attempt < maxReviewRetries) {
+      console.log(`[${agentName}] 🔄 [${task.id}] 리뷰 재작업 요청 (${attempt + 1}/${maxReviewRetries})`);
     } else {
       console.log(`[${agentName}] ⚠️  [${task.id}] 최대 재시도 초과 — 현재 결과로 진행`);
     }

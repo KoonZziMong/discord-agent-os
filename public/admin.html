@@ -944,6 +944,17 @@ function openSystemPanel() {
     </div>
 
     <div class="form-section">
+      <div class="form-section-title">Agent Workflow ${hotBadge()}</div>
+      <div class="form-group">
+        <label>리뷰 최대 재시도 횟수</label>
+        <div class="flex-row">
+          <input id="s-review-retries" type="number" min="0" max="10" value="${cfg.maxReviewRetries ?? 2}" style="width:80px">
+          <span style="color:var(--text-muted);font-size:12px">회 (0 = 리뷰 없이 바로 테스트)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-section">
       <div class="form-section-title">툴봇 매핑 ${hotBadge()}</div>
       <div class="kv-list" id="toolbot-list">${toolBotRows}</div>
       <button class="btn-ghost" style="width:100%;margin-top:6px" onclick="addToolBotRow()">+ 매핑 추가</button>
@@ -989,6 +1000,7 @@ async function saveSystem() {
   cfg.adminPort = parseInt(val('s-port')) || 3000;
   cfg.adminHost = val('s-host') || '127.0.0.1';
   cfg.historyLimit = parseInt(val('s-hist')) || 20;
+  cfg.maxReviewRetries = parseInt(val('s-review-retries')) ?? 2;
   cfg.toolBots = collectKvList('toolbot-list');
   cfg.commands = {
     task:    splitTrimmed(val('s-cmd-task'))    || ['!목표', '!task'],

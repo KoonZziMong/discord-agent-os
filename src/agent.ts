@@ -16,7 +16,7 @@
  */
 
 import { Client, Message, TextChannel } from 'discord.js';
-import type { AgentConfig } from './config';
+import type { AgentConfig, AppConfig } from './config';
 import { createLLMClient, type LLMClient, type ToolResultContent } from './llm';
 import { AgentMCPManager } from './mcp';
 import { computerAction, executeBash, executeTextEditor } from './computer';
@@ -32,19 +32,21 @@ import type { Task } from './task/types';
 import { executeWorkflow } from './agentGraph/executor';
 
 export class Agent {
-  readonly id: string;       // "zzimong" | "aru" | "sense"
-  readonly name: string;     // "찌몽" | "아루" | "센세"
+  readonly id: string;
+  readonly name: string;
   config: AgentConfig;
-  botClient: Client;         // 이 에이전트 전용 discord.js Client
-  botUserId = '';            // Discord User ID (ready 이벤트 후 설정)
+  appCfg: AppConfig;         // 전역 설정 참조 (maxReviewRetries 등)
+  botClient: Client;
+  botUserId = '';
 
   private llm: LLMClient;
   readonly mcpManager: AgentMCPManager;
 
-  constructor(cfg: AgentConfig, botClient: Client) {
+  constructor(cfg: AgentConfig, botClient: Client, appCfg: AppConfig) {
     this.id = cfg.id;
     this.name = cfg.name;
     this.config = cfg;
+    this.appCfg = appCfg;
     this.botClient = botClient;
     this.llm = createLLMClient(cfg);
     this.mcpManager = new AgentMCPManager(cfg.id, cfg.mcpTokens);
@@ -228,6 +230,7 @@ export class Agent {
       this.buildSystemPrompt('chat'),
       runClaudeCode,
       this.config.githubRepo,
+      this.appCfg.maxReviewRetries,
     );
 
     return [

@@ -71,6 +71,8 @@ export interface AppConfig {
   githubRepos: string[];
   /** 채팅 명령어 prefix 설정 */
   commands: CommandsConfig;
+  /** Agent Workflow 리뷰 최대 재시도 횟수 (기본값: 2) */
+  maxReviewRetries: number;
 }
 
 // 프로젝트 루트 (src/../)
@@ -127,6 +129,7 @@ export function loadConfig(): AppConfig {
       help:    raw.commands?.help    ?? ['!도움말', '!help'],
       task:    raw.commands?.task    ?? ['!목표', '!task'],
     },
+    maxReviewRetries: raw.maxReviewRetries ?? 2,
   };
 }
 
