@@ -32,6 +32,7 @@ import { runTaskGraph } from './task/runner';
 import type { Task } from './task/types';
 import { executeWorkflow } from './agentGraph/executor';
 import { getRoleContent } from './roleContext';
+import { runRetrospective } from './retrospective';
 
 export class Agent {
   readonly id: string;
@@ -194,6 +195,20 @@ export class Agent {
         channel,
         (task) => this.executeTask(task, graph, message.channelId),
       );
+
+      // 4. 회고 — 사이클 완료 후 이슈 분석 및 역할 핀 개선 제안 (Phase 1: 유저 컨펌)
+      if (graph.isComplete() || graph.hasFailed()) {
+        const systemPrompt = await this.buildSystemPrompt('chat', message.channelId);
+        runRetrospective({
+          graph: graph.data,
+          llm: this.llm,
+          agentSystemPrompt: systemPrompt,
+          channel,
+          userId: message.author.id,
+        }).catch((err: unknown) => {
+          console.warn(`[${this.name}] 회고 실패:`, err instanceof Error ? err.message : err);
+        });
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[${this.name}] 태스크 그래프 오류:`, msg);
