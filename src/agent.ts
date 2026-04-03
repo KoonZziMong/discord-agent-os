@@ -31,6 +31,7 @@ import { TaskGraph } from './task/graph';
 import { runTaskGraph } from './task/runner';
 import type { Task } from './task/types';
 import { executeWorkflow } from './agentGraph/executor';
+import { getRoleContent } from './roleContext';
 
 export class Agent {
   readonly id: string;
@@ -86,7 +87,7 @@ export class Agent {
 
     const stopTyping = keepTyping(channel);
     try {
-      const systemPrompt = this.buildSystemPrompt(mode, message.channelId);
+      const systemPrompt = await this.buildSystemPrompt(mode, message.channelId);
       // 유저 메시지는 router.ts에서 이미 추가됨 → 히스토리에 포함되어 있음
       const historyMessages = history.getHistory(message.channelId, this.id, false);
       const tools = mode === 'config' ? CONFIG_TOOLS : this.buildChatTools(services);
@@ -141,7 +142,7 @@ export class Agent {
     collabChannelId: string,
     services: string[] = [],
   ): Promise<string> {
-    const systemPrompt = this.buildSystemPrompt('chat', collabChannelId);
+    const systemPrompt = await this.buildSystemPrompt('chat', collabChannelId);
     const historyMessages = history.getHistory(collabChannelId, this.id, true);
 
     const { text } = await this.llm.chat(
@@ -227,7 +228,7 @@ export class Agent {
       channelId,
       this.llm,
       this.name,
-      this.buildSystemPrompt('chat', channelId),
+      await this.buildSystemPrompt('chat', channelId),
       runClaudeCode,
       this.config.githubRepo,
       this.appCfg.maxReviewRetries,
@@ -266,7 +267,7 @@ export class Agent {
     return tools;
   }
 
-  private buildSystemPrompt(mode: 'chat' | 'config', channelId?: string): string {
+  private async buildSystemPrompt(mode: 'chat' | 'config', channelId?: string): Promise<string> {
     const personaContent = persona.load(this.config.personaFile);
     const base = `당신은 ${this.name}입니다.\n\n${personaContent}`;
 
@@ -274,6 +275,15 @@ export class Agent {
     const channelCtxBlock = channelId
       ? buildContextBlock(getChannelContext(channelId), this.id)
       : '';
+
+    // 역할 채널 컨텍스트 (봇 전용 핀에 "역할채널: {id}" 있을 때만)
+    let roleBlock = '';
+    if (channelId) {
+      const roleContent = await getRoleContent(this.botClient, this.id, channelId);
+      if (roleContent) {
+        roleBlock = '\n\n---\n## 나의 역할\n' + roleContent;
+      }
+    }
 
     const common =
       '\n\n---\n' +
@@ -283,7 +293,7 @@ export class Agent {
 
     if (mode === 'config') {
       return (
-        base + channelCtxBlock + common +
+        base + channelCtxBlock + roleBlock + common +
         '\n\n---\n' +
         '## 설정 채널 지시사항\n' +
         '사용자가 이 채널에서 내리는 지시는 당신의 페르소나·규칙·기억을 수정하는 명령입니다.\n' +
@@ -291,7 +301,7 @@ export class Agent {
         '수정 완료 후 어떤 내용을 어떻게 변경했는지 한국어로 확인 메시지를 보내세요.'
       );
     }
-    return base + channelCtxBlock + common;
+    return base + channelCtxBlock + roleBlock + common;
   }
 
   /**
