@@ -272,7 +272,7 @@ export class Agent {
 
     // 채널 토픽 + 핀 메시지 컨텍스트
     const channelCtxBlock = channelId
-      ? buildContextBlock(getChannelContext(channelId))
+      ? buildContextBlock(getChannelContext(channelId), this.id)
       : '';
 
     const common =

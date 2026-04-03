@@ -88,18 +88,46 @@ export async function refreshPins(channel: TextChannel): Promise<void> {
 }
 
 /**
- * 컨텍스트를 system prompt에 주입할 텍스트로 변환합니다.
- * 토픽과 핀이 모두 없으면 빈 문자열을 반환합니다.
+ * 핀 메시지가 특정 봇을 대상으로 하는지 확인합니다.
+ * 핀 첫 줄이 <@botId> 또는 <@!botId> 멘션으로 시작하면 해당 봇 전용입니다.
+ * 멘션으로 시작하지 않으면 모든 봇 공통입니다.
  */
-export function buildContextBlock(ctx: ChannelContext): string {
+function getPinTargetId(pin: string): string | null {
+  const match = pin.trimStart().match(/^<@!?(\d+)>/);
+  return match ? match[1] : null;
+}
+
+/**
+ * 컨텍스트를 system prompt에 주입할 텍스트로 변환합니다.
+ *
+ * @param ctx      채널 컨텍스트 (토픽 + 핀 목록)
+ * @param botId    이 봇의 Discord user ID — 봇 전용 핀 필터링에 사용
+ *                 멘션 없는 핀(공통)은 항상 포함됩니다.
+ */
+export function buildContextBlock(ctx: ChannelContext, botId?: string): string {
   const parts: string[] = [];
 
   if (ctx.topic) {
-    parts.push(`## 채널 토픽\n${ctx.topic}`);
+    parts.push(`## 채널 중요 정보\n${ctx.topic}`);
   }
 
-  if (ctx.pins.length > 0) {
-    parts.push(`## 채널 지시사항\n${ctx.pins.join('\n\n---\n\n')}`);
+  // 이 봇에게 해당하는 핀만 필터링
+  // - 멘션 없는 핀 → 공통, 항상 포함
+  // - <@botId>로 시작하는 핀 → 해당 봇에게만 포함
+  const relevantPins = ctx.pins.filter((pin) => {
+    const targetId = getPinTargetId(pin);
+    if (!targetId) return true;           // 공통
+    return botId ? targetId === botId : false; // 봇 전용
+  });
+
+  if (relevantPins.length > 0) {
+    // 봇 전용 핀은 멘션 첫 줄을 제거하고 내용만 전달
+    const cleaned = relevantPins.map((pin) => {
+      const targetId = getPinTargetId(pin);
+      if (!targetId) return pin;
+      return pin.trimStart().replace(/^<@!?\d+>\s*/, '');
+    });
+    parts.push(`## 채널 지시사항\n${cleaned.join('\n\n---\n\n')}`);
   }
 
   if (parts.length === 0) return '';
