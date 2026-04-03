@@ -192,6 +192,35 @@ async function main(): Promise<void> {
     }),
   );
 
+  // '역할' 카테고리 채널 핀을 channelContext 캐시에 로드
+  // (회고 분석 시 역할 채널 내용을 빠르게 참조할 수 있도록)
+  try {
+    const guild = primaryClient.guilds.cache.first()
+      ?? (appCfg.guildId ? await primaryClient.guilds.fetch(appCfg.guildId) : null);
+
+    if (guild) {
+      const roleCategory = guild.channels.cache.find(
+        (c) => c.type === 4 /* GuildCategory */ && c.name === '역할',
+      );
+      if (roleCategory) {
+        const roleChannels = guild.channels.cache.filter(
+          (c) => c.parentId === roleCategory.id && c.type === 0 /* GuildText */,
+        );
+        await Promise.allSettled(
+          [...roleChannels.values()].map(async (ch) => {
+            try {
+              const textCh = await primaryClient.channels.fetch(ch.id) as TextChannel;
+              await loadChannelContext(textCh);
+            } catch { /* 개별 채널 로드 실패는 무시 */ }
+          }),
+        );
+        console.log(`📌 역할 채널 ${roleChannels.size}개 핀 로드 완료`);
+      }
+    }
+  } catch (err: unknown) {
+    console.warn('⚠️  역할 채널 로드 실패:', err instanceof Error ? err.message : err);
+  }
+
   // [7] 미완료 태스크 그래프 재개 (봇 재시작 복구)
   const incompleteGraphs = loadIncompleteGraphs();
   if (incompleteGraphs.length > 0) {

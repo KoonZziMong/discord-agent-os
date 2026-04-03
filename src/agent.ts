@@ -202,6 +202,7 @@ export class Agent {
         runRetrospective({
           graph: graph.data,
           llm: this.llm,
+          client: this.botClient,
           agentSystemPrompt: systemPrompt,
           channel,
           userId: message.author.id,

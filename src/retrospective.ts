@@ -15,12 +15,12 @@
  */
 
 import { randomUUID } from 'crypto';
-import type { TextChannel, Guild, CategoryChannel } from 'discord.js';
+import type { Client, TextChannel, Guild, CategoryChannel } from 'discord.js';
 import type { LLMClient } from './llm';
 import type { TaskGraphData } from './task/types';
 import { ROLE_UPDATE_PROPOSAL_SENTINEL } from './agentProtocol';
 import { saveProposal } from './roleProposals';
-import { getChannelContext } from './channelContext';
+import { fetchRoleContent } from './roleContext';
 
 // 24시간 (ms)
 const PROPOSAL_TTL = 24 * 60 * 60 * 1000;
@@ -69,21 +69,14 @@ async function findRoleChannels(guild: Guild): Promise<Record<string, string>> {
 }
 
 /**
- * 역할 채널의 현재 핀 내용을 가져옵니다.
- * channelContext 캐시 우선 → 없으면 빈 문자열.
- */
-function getRoleChannelContent(channelId: string): string {
-  const ctx = getChannelContext(channelId);
-  return ctx.pins.join('\n\n---\n\n');
-}
-
-/**
  * LLM을 사용해 이슈를 분석하고 역할 핀 개선 제안을 생성합니다.
+ * 역할 채널 내용은 핀 메시지를 Discord API에서 직접 가져옵니다.
  *
  * @returns 제안 목록 (역할별) — 개선이 필요 없으면 빈 배열
  */
 async function generateProposals(
   llm: LLMClient,
+  client: Client,
   graph: TaskGraphData,
   issuesSummary: string,
   roleChannels: Record<string, string>,
@@ -91,12 +84,15 @@ async function generateProposals(
 ): Promise<Array<{ targetRole: string; roleChannelId: string; newContent: string; reasoning: string }>> {
   if (issuesSummary === '(이슈 없음 — 정상 완료)') return [];
 
-  const roleChannelSummary = Object.entries(roleChannels)
-    .map(([role, id]) => {
-      const content = getRoleChannelContent(id);
-      return `### ${role} 채널 (ID: ${id})\n${content.slice(0, 800) || '(내용 없음)'}`;
-    })
-    .join('\n\n');
+  // 역할 채널 핀을 Discord API에서 직접 조회 (캐시 의존 없음)
+  const roleChannelSummary = (
+    await Promise.all(
+      Object.entries(roleChannels).map(async ([role, id]) => {
+        const content = await fetchRoleContent(client, id);
+        return `### ${role} 채널 (ID: ${id})\n${content.slice(0, 800) || '(내용 없음)'}`;
+      }),
+    )
+  ).join('\n\n');
 
   const prompt = `당신은 AI 에이전트 팀의 오케스트레이터입니다.
 방금 완료된 작업 사이클을 회고하고 역할 정의를 개선하는 역할을 합니다.
@@ -165,12 +161,13 @@ ${roleChannelSummary}
 export async function runRetrospective(opts: {
   graph: TaskGraphData;
   llm: LLMClient;
+  client: Client;          // 역할 채널 핀 조회용 Discord 클라이언트
   agentSystemPrompt: string;
   channel: TextChannel;
   userId: string;          // 제안 메시지에서 멘션할 유저 ID
   cycleId?: string;        // 하네스 cycleId (없으면 graphId 사용)
 }): Promise<void> {
-  const { graph, llm, agentSystemPrompt, channel, userId, cycleId } = opts;
+  const { graph, llm, client, agentSystemPrompt, channel, userId, cycleId } = opts;
 
   console.log(`[retrospective] 사이클 ${graph.id} 회고 시작...`);
 
@@ -189,8 +186,8 @@ export async function runRetrospective(opts: {
     return;
   }
 
-  // 3. LLM 분석
-  const proposals = await generateProposals(llm, graph, issuesSummary, roleChannels, agentSystemPrompt);
+  // 3. LLM 분석 — 역할 채널 핀을 Discord API에서 직접 읽어 분석
+  const proposals = await generateProposals(llm, client, graph, issuesSummary, roleChannels, agentSystemPrompt);
   if (proposals.length === 0) {
     console.log('[retrospective] 제안할 개선 사항 없음');
     return;

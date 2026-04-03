@@ -47,8 +47,9 @@ export function invalidateRoleCache(roleChannelId: string): void {
 
 /**
  * 역할 채널의 핀 메시지를 로드하여 캐시에 저장하고 반환합니다.
+ * 캐시가 있으면 캐시를 반환합니다.
  */
-async function fetchRoleContent(client: Client, roleChannelId: string): Promise<string> {
+export async function fetchRoleContent(client: Client, roleChannelId: string): Promise<string> {
   if (cache.has(roleChannelId)) return cache.get(roleChannelId)!;
 
   try {
