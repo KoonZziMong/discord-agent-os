@@ -13,10 +13,10 @@
  *  [9] Graceful shutdown 핸들러 등록
  */
 
-import { Client, GatewayIntentBits, Events, TextChannel, BaseGuildTextChannel, ChatInputCommandInteraction, StringSelectMenuInteraction, Collection } from 'discord.js';
+import { Client, GatewayIntentBits, Events, TextChannel, BaseGuildTextChannel, ChatInputCommandInteraction, StringSelectMenuInteraction, Collection, MessageReaction, PartialMessageReaction, User, PartialUser } from 'discord.js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { loadConfig } from './config';
+import { loadConfig, type AppConfig } from './config';
 import { Agent } from './agent';
 import { createRouter } from './router';
 import { loadFromDiscord } from './history';
@@ -25,6 +25,8 @@ import { invalidateRoleCache } from './roleContext';
 import { TaskGraph } from './task/graph';
 import { loadIncompleteGraphs } from './task/store';
 import { startAdminServer } from './admin/server';
+import { cleanExpiredProposals, findProposalByMessageId, deleteProposal } from './roleProposals';
+import { ROLE_UPDATE_PROPOSAL_SENTINEL } from './agentProtocol';
 
 interface SlashCommand {
   data: { name: string };
@@ -47,9 +49,66 @@ function loadCommands(): Collection<string, SlashCommand> {
   return collection;
 }
 
+/**
+ * [ROLE_UPDATE_PROPOSAL] 메시지에 반응(✅/❌)이 달렸을 때 제안을 적용하거나 폐기합니다.
+ */
+async function applyOrRejectProposal(
+  emoji: string | null,
+  proposal: import('./roleProposals').RoleProposal,
+  notifyChannel: TextChannel,
+  appCfg: AppConfig,
+  clients: Client[],
+  agents: Agent[],
+): Promise<void> {
+  if (emoji === '✅') {
+    console.log(`[proposal] 승인: ${proposal.proposalId} (role: ${proposal.targetRole})`);
+    try {
+      // CmdBot으로 역할 채널 핀 수정
+      const cmdClient = clients.find((c) => !agents.some((a) => a.botClient === c));
+      if (!cmdClient) throw new Error('CmdBot 없음');
+
+      const roleChannel = await cmdClient.channels.fetch(proposal.roleChannelId) as TextChannel;
+
+      // 기존 핀 해제
+      const existingPins = await roleChannel.messages.fetchPinned();
+      for (const m of existingPins.values()) await m.unpin().catch(() => {});
+
+      // 새 핀 등록
+      const newMsg = await roleChannel.send(proposal.newContent);
+      await newMsg.pin();
+
+      // 캐시 무효화
+      invalidateRoleCache(proposal.roleChannelId);
+      await refreshPins(roleChannel).catch(() => {});
+
+      deleteProposal(proposal.proposalId);
+
+      await notifyChannel.send(
+        `✅ **역할 핀 업데이트 완료** — \`${proposal.targetRole}\` 역할이 수정되었습니다.\n` +
+        `-# proposalId: ${proposal.proposalId}`,
+      );
+      console.log(`[proposal] 적용 완료: ${proposal.proposalId}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[proposal] 적용 실패: ${msg}`);
+      await notifyChannel.send(`❌ 역할 핀 업데이트 실패: ${msg.slice(0, 200)}`).catch(() => {});
+    }
+  } else if (emoji === '❌') {
+    console.log(`[proposal] 거부: ${proposal.proposalId}`);
+    deleteProposal(proposal.proposalId);
+    await notifyChannel.send(
+      `❌ **역할 핀 업데이트 거부됨** — \`${proposal.targetRole}\` 제안이 폐기되었습니다.\n` +
+      `-# proposalId: ${proposal.proposalId}`,
+    ).catch(() => {});
+  }
+}
+
 async function main(): Promise<void> {
   // [1] 설정 로드
   const appCfg = loadConfig();
+
+  // 만료된 역할 핀 업데이트 제안 정리
+  cleanExpiredProposals();
 
   // 슬래시 커맨드 로드
   const slashCommands = loadCommands();
@@ -63,6 +122,7 @@ async function main(): Promise<void> {
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessageReactions,  // [ROLE_UPDATE_PROPOSAL] 반응 감지
       ],
     }),
   );
@@ -184,6 +244,55 @@ async function main(): Promise<void> {
     if (newMsg.pinned && newMsg.channel instanceof BaseGuildTextChannel) {
       refreshPins(newMsg.channel as TextChannel).catch(() => {});
     }
+  });
+
+  // [ROLE_UPDATE_PROPOSAL] 반응 핸들러 (✅ = 승인, ❌ = 거부)
+  const handleProposalReaction = async (
+    reaction: MessageReaction | PartialMessageReaction,
+    user: User | PartialUser,
+  ): Promise<void> => {
+    if (user.bot) return;
+
+    // partial 해소
+    if (reaction.partial) {
+      try { await reaction.fetch(); } catch { return; }
+    }
+    if (reaction.message.partial) {
+      try { await reaction.message.fetch(); } catch { return; }
+    }
+
+    const msg = reaction.message;
+    const emoji = reaction.emoji.name;
+
+    // 제안 메시지 여부 확인
+    if (!msg.content?.trimStart().startsWith(ROLE_UPDATE_PROPOSAL_SENTINEL)) return;
+
+    // proposalId 파싱 (메시지에서 "proposalId: <id>" 추출)
+    const proposalIdMatch = msg.content.match(/proposalId:\s*(\S+)/);
+    if (!proposalIdMatch) {
+      // proposalId 없으면 메시지 ID로 검색
+      const proposal = findProposalByMessageId(msg.id);
+      if (!proposal) return;
+      await applyOrRejectProposal(emoji, proposal, msg.channel as TextChannel, appCfg, clients, agents);
+      return;
+    }
+
+    const proposal = findProposalByMessageId(msg.id) ??
+      // proposalId로 직접 로드 (메시지 ID 매칭 실패 시 폴백)
+      (await import('./roleProposals')).loadProposal(proposalIdMatch[1]);
+
+    if (!proposal) {
+      console.warn(`[proposal] 메시지(${msg.id})에 해당하는 제안 없음`);
+      return;
+    }
+
+    await applyOrRejectProposal(emoji, proposal, msg.channel as TextChannel, appCfg, clients, agents);
+  };
+
+  primaryClient.on(Events.MessageReactionAdd, (reaction, user) => {
+    handleProposalReaction(reaction, user).catch((err: unknown) => {
+      console.error('반응 핸들러 오류:', err instanceof Error ? err.message : err);
+    });
   });
 
   // [8] interactionCreate — CmdBot 전담 처리 (AI 봇은 커맨드 처리 안 함)
