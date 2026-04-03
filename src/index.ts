@@ -21,7 +21,7 @@ import { Agent } from './agent';
 import { createRouter } from './router';
 import { loadFromDiscord } from './history';
 import { loadChannelContext, updateTopic, refreshPins } from './channelContext';
-import { invalidateRoleCache } from './roleContext';
+import { invalidateRoleCache, parseAgentRole } from './roleContext';
 import { TaskGraph } from './task/graph';
 import { loadIncompleteGraphs } from './task/store';
 import { startAdminServer } from './admin/server';
@@ -191,6 +191,29 @@ async function main(): Promise<void> {
       }
     }),
   );
+
+  // 협력 채널 핀에서 각 봇의 하네스 역할(역할: xxx) 자동 감지 → agent.config.role 주입
+  if (appCfg.collabChannel) {
+    try {
+      const collabCh = await primaryClient.channels.fetch(appCfg.collabChannel) as TextChannel;
+      const pinned = await collabCh.messages.fetchPinned();
+      for (const agent of agents) {
+        const botPin = [...pinned.values()].find((m) => {
+          const first = m.content.trimStart().match(/^<@!?(\d+)>/);
+          return first && first[1] === agent.id;
+        });
+        if (botPin) {
+          const role = parseAgentRole(botPin.content);
+          if (role) {
+            agent.config.role = role;
+            console.log(`🎭 ${agent.name} 역할 감지: ${role}`);
+          }
+        }
+      }
+    } catch (err: unknown) {
+      console.warn('⚠️  봇 역할 감지 실패:', err instanceof Error ? err.message : err);
+    }
+  }
 
   // '역할' 카테고리 채널 핀을 channelContext 캐시에 로드
   // (회고 분석 시 역할 채널 내용을 빠르게 참조할 수 있도록)

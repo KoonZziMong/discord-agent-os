@@ -31,6 +31,15 @@ export function parseRoleChannelId(pinContent: string): string | null {
 }
 
 /**
+ * 핀 내용에서 "역할: {roleName}" 패턴으로 하네스 역할명을 추출합니다.
+ * 예: "역할: orchestrator" → "orchestrator"
+ */
+export function parseAgentRole(pinContent: string): string | null {
+  const match = pinContent.match(/역할:\s*(\S+)/);
+  return match ? match[1] : null;
+}
+
+/**
  * 역할 채널 ID가 캐시에 존재하는지 확인합니다. (갱신 필요 여부 판단용)
  */
 export function isRoleChannelCached(roleChannelId: string): boolean {

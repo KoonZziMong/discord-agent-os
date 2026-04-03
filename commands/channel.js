@@ -126,6 +126,17 @@ async function handleSetup(interaction) {
   await interaction.editReply({ content: `**지시사항:** ${instruction}\n\n⏳ 채널 정보 수집 중...` });
 
   try {
+    // '역할' 카테고리 채널 목록 조회 (역할 지정 시 오타 방지용)
+    const guild = interaction.guild;
+    const roleCategory = guild?.channels.cache.find(
+      (c) => c.type === 4 /* GuildCategory */ && c.name === '역할',
+    );
+    const availableRoles = roleCategory
+      ? guild.channels.cache
+          .filter((c) => c.parentId === roleCategory.id && c.type === 0)
+          .map((c) => c.name)
+      : [];
+
     // 현재 핀 메시지만 미리 로드 (토픽은 channel.topic으로 바로 접근)
     const pinnedMsgs = await channel.messages.fetchPinned();
     const pinnedList = [...pinnedMsgs.values()].reverse()
@@ -198,6 +209,24 @@ async function handleSetup(interaction) {
 - 예시:
   - \`<@1488036292280320140>\n찌몽 전용 역할 설명...\` → 찌몽에게만 전달
   - \`## 공통 프로젝트 규칙\n...\` → 모든 봇에게 전달
+
+## 하네스 역할 지정 규칙
+봇 전용 핀에 하네스 역할을 지정할 때는 반드시 아래 형식을 사용하세요:
+\`역할: {역할명}\`
+
+${availableRoles.length > 0
+  ? `현재 등록된 역할 (정확히 이 이름 중 하나만 사용):
+${availableRoles.map((r) => `- ${r}`).join('\n')}
+
+사용자가 역할 이름에 오타를 내거나 다른 표현을 써도 위 목록에서 가장 가까운 역할명으로 교정하여 사용하세요.`
+  : '(역할 채널 없음 — /role init을 먼저 실행하세요)'
+}
+
+예시:
+\`<@1488036292280320140>
+역할: orchestrator
+역할채널: 1234567890
+찌몽 전용 지시사항...\`
 
 ## 작업 방식
 1. 사용자의 지시와 채널 현재 상태를 파악합니다
