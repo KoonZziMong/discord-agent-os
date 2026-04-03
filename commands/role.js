@@ -357,6 +357,11 @@ module.exports = {
       sub
         .setName('init')
         .setDescription('역할 카테고리·채널 생성 + 협력 채널에 TEAM_MANIFEST 핀 등록'),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('reset')
+        .setDescription('역할 채널 핀을 코드의 최신 기본값으로 교체 (기존 메시지는 히스토리로 보존)'),
     ),
 
   async execute(interaction) {
@@ -367,6 +372,8 @@ module.exports = {
     const sub = interaction.options.getSubcommand();
     if (sub === 'init') {
       await handleInit(interaction);
+    } else if (sub === 'reset') {
+      await handleReset(interaction);
     }
   },
 };
@@ -451,6 +458,56 @@ async function handleInit(interaction) {
     });
   } catch (err) {
     console.error('[/role init] 오류:', err);
+    await interaction.editReply({ content: `❌ 오류: ${err.message}` });
+  }
+}
+
+// ── /role reset ───────────────────────────────────────────────
+
+async function handleReset(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const guild = interaction.guild;
+  const log = [];
+
+  try {
+    // '역할' 카테고리 찾기
+    const category = guild.channels.cache.find(
+      (c) => c.type === ChannelType.GuildCategory && c.name === '역할',
+    );
+    if (!category) {
+      return interaction.editReply({ content: '❌ 역할 카테고리가 없습니다. 먼저 `/role init`을 실행하세요.' });
+    }
+
+    for (const role of DEFAULT_ROLES) {
+      const channel = guild.channels.cache.find(
+        (c) => c.parentId === category.id && c.name === role.name,
+      );
+      if (!channel) {
+        log.push(`  ⚠️  #${role.name} — 채널 없음, 스킵`);
+        continue;
+      }
+
+      const textChannel = await guild.channels.fetch(channel.id);
+
+      // 기존 핀 전체 언핀 (메시지는 채널에 남아 히스토리 보존)
+      const pinned = await textChannel.messages.fetchPinned();
+      for (const msg of pinned.values()) {
+        await msg.unpin().catch(() => {});
+      }
+
+      // 최신 기본값으로 새 메시지 작성 + 핀 고정
+      const newMsg = await textChannel.send(role.content);
+      await newMsg.pin();
+
+      log.push(`  ✅ #${role.name} — 핀 교체 완료 (기존 ${pinned.size}개 언핀)`);
+    }
+
+    await interaction.editReply({
+      content: `✅ 역할 핀 리셋 완료\n\`\`\`\n${log.join('\n')}\n\`\`\``,
+    });
+  } catch (err) {
+    console.error('[/role reset] 오류:', err);
     await interaction.editReply({ content: `❌ 오류: ${err.message}` });
   }
 }
