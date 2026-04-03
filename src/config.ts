@@ -14,6 +14,7 @@ import * as path from 'path';
 export interface AgentConfig {
   id: string;            // Discord User ID
   name: string;          // 표시 이름
+  role?: string;         // 하네스 역할명 (orchestrator/planner/developer/reviewer/tester/researcher)
   discordToken: string;  // Discord Bot Token
   personaFile: string;   // 절대 경로 (loadConfig에서 해석) — 채널 핀 없을 때 폴백
   configChannel?: string; // (레거시) 설정 전용 채널 — 사용 안 해도 됨

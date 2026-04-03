@@ -183,7 +183,7 @@ async function handleHarnessMessage(
   }
 
   // 대상 에이전트 찾기
-  const targetAgent = agents.find((a) => a.id === header.to);
+  const targetAgent = agents.find((a) => (a.config.role ?? a.id) === header.to);
   if (!targetAgent) {
     console.warn(`[하네스] 대상 에이전트 없음 (to: ${header.to})`);
     return;
