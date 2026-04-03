@@ -44,7 +44,7 @@ const activeCycles = new Map<string, CycleState>();
 // 채널별 연속 봇 메시지 카운터 (루프 방지)
 // channelId → 연속 봇 메시지 수
 const botTurnCounter = new Map<string, number>();
-const MAX_CONSECUTIVE_BOT_TURNS = 10;
+const MAX_CONSECUTIVE_BOT_TURNS = 30;
 
 // ── 유틸 ──────────────────────────────────────────────────────
 
@@ -250,9 +250,9 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
           return;
         }
 
-        // 봇 @멘션 → 멘션된 봇에게 전달
-        const mentionedAgent = agents.find((a) => message.mentions.users.has(a.id));
-        if (mentionedAgent) {
+        // 봇 @멘션 → 멘션된 봇들에게 병렬 전달
+        const mentionedAgents = agents.filter((a) => message.mentions.users.has(a.id));
+        if (mentionedAgents.length > 0) {
           const chId = message.channelId;
           const turns = (botTurnCounter.get(chId) ?? 0) + 1;
 
@@ -273,22 +273,25 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
             content: message.content,
           });
 
-          console.log(`[라우터] 봇 멘션 라우팅: ${message.author.username} → ${mentionedAgent.name} (turn ${turns})`);
-          const agentCh = await mentionedAgent.botClient.channels.fetch(chId).catch(() => null) as TextChannel | null;
-          if (!agentCh) return;
+          console.log(`[라우터] 봇 멘션 라우팅: ${message.author.username} → [${mentionedAgents.map((a) => a.name).join(', ')}] (turn ${turns}) — 병렬 실행`);
 
-          try {
-            const responseText = await mentionedAgent.respondInCollab(chId);
-            history.addMessage(chId, {
-              authorId: mentionedAgent.id,
-              authorName: mentionedAgent.name,
-              content: responseText,
-            });
-            await sendSplit(agentCh, responseText);
-          } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error(`[라우터] 봇 멘션 응답 오류 (${mentionedAgent.name}): ${msg}`);
-          }
+          // 멘션된 모든 봇 병렬 응답
+          await Promise.all(mentionedAgents.map(async (agent) => {
+            const agentCh = await agent.botClient.channels.fetch(chId).catch(() => null) as TextChannel | null;
+            if (!agentCh) return;
+            try {
+              const responseText = await agent.respondInCollab(chId);
+              history.addMessage(chId, {
+                authorId: agent.id,
+                authorName: agent.name,
+                content: responseText,
+              });
+              await sendSplit(agentCh, responseText);
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.error(`[라우터] 봇 멘션 응답 오류 (${agent.name}): ${msg}`);
+            }
+          }));
         }
       }
       return;
