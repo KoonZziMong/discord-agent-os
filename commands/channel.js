@@ -24,6 +24,13 @@ function loadCmdBotConfig() {
   return config.cmdBot ?? {};
 }
 
+// config.json에서 에이전트 목록(이름 → ID) 로드
+function loadAgentList() {
+  const configPath = path.join(__dirname, '..', 'data', 'config.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  return (config.agents ?? []).map((a) => ({ id: a.id, name: a.name }));
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('channel')
@@ -126,6 +133,9 @@ async function handleSetup(interaction) {
   await interaction.editReply({ content: `**지시사항:** ${instruction}\n\n⏳ 채널 정보 수집 중...` });
 
   try {
+    // 에이전트 목록 로드 (봇 멘션 생성 시 정확한 ID 제공용)
+    const agentList = loadAgentList();
+
     // '역할' 카테고리 채널 목록 조회 (역할 지정 시 오타 방지용)
     const guild = interaction.guild;
     const roleCategory = guild?.channels.cache.find(
@@ -206,8 +216,13 @@ async function handleSetup(interaction) {
 ## 봇 전용 핀 작성 규칙
 - 특정 봇에게만 전달할 내용은 핀 맨 첫 줄을 해당 봇의 멘션(<@봇ID>)으로 시작하세요
 - 멘션 없이 시작하는 핀은 채널의 모든 봇에게 공통으로 전달됩니다
+- 반드시 아래 실제 봇 ID를 사용하세요 (임의로 ID를 만들지 마세요):
+${agentList.length > 0
+  ? agentList.map((a) => `  - ${a.name}: <@${a.id}>`).join('\n')
+  : '  (등록된 봇 없음)'
+}
 - 예시:
-  - \`<@1488036292280320140>\n찌몽 전용 역할 설명...\` → 찌몽에게만 전달
+  - \`<@실제봇ID>\n봇 전용 역할 설명...\` → 해당 봇에게만 전달
   - \`## 공통 프로젝트 규칙\n...\` → 모든 봇에게 전달
 
 ## 하네스 역할 지정 규칙
