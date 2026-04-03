@@ -76,6 +76,19 @@ export interface AppConfig {
   commands: CommandsConfig;
   /** Agent Workflow 리뷰 최대 재시도 횟수 (기본값: 2) */
   maxReviewRetries: number;
+
+  // ── 하네스 설정 ────────────────────────────────────────────
+  /** 사이클당 최대 turn 수 (기본값: 12) */
+  maxTurnsPerCycle: number;
+  /** 사이클 최대 실행 시간 분 단위 (기본값: 30) */
+  maxCycleMinutes: number;
+  /**
+   * 역할 핀 자율 업데이트 활성화 여부 (기본값: false)
+   * false: 오케스트레이터가 제안 → 유저 컨펌 후 적용 (Phase 1)
+   * true:  오케스트레이터가 직접 적용 + 채널에 공지 (Phase 2)
+   * 오케스트레이터 자신의 핀은 이 값과 무관하게 항상 유저 컨펌 필요
+   */
+  autonomousRoleUpdates: boolean;
 }
 
 // 프로젝트 루트 (src/../)
@@ -139,6 +152,9 @@ export function loadConfig(): AppConfig {
       task:    raw.commands?.task    ?? ['!목표', '!task'],
     },
     maxReviewRetries: raw.maxReviewRetries ?? 2,
+    maxTurnsPerCycle: raw.maxTurnsPerCycle ?? 12,
+    maxCycleMinutes: raw.maxCycleMinutes ?? 30,
+    autonomousRoleUpdates: raw.autonomousRoleUpdates ?? false,
   };
 }
 
