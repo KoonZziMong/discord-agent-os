@@ -249,9 +249,19 @@ ${availableRoles.map((r) => `- ${r}`).join('\n')}
 3. 모든 정보가 파악되면 반드시 아래 JSON 형식으로만 최종 응답합니다 (다른 텍스트 없이):
 
 {
-  "topic": "채널의 중요 정보 (최대 1024자, 충분히 활용)",
-  "pins": ["첫 번째 핀 내용 (최대 2000자)", "두 번째 핀 내용", "필요시 추가"]
-}`;
+  "topic": "변경할 토픽 내용. 토픽을 변경하지 않으려면 현재 토픽을 그대로 반환하세요.",
+  "pinChanges": {
+    "keep":   ["변경 불필요한 핀의 ID (현재 고정 메시지에서 ID 참조)"],
+    "update": [{"id": "수정할 핀 ID", "content": "새 내용 (최대 2000자)"}],
+    "add":    ["새로 추가할 핀 내용 (최대 2000자)"],
+    "remove": ["삭제할 핀 ID"]
+  }
+}
+
+핵심 원칙:
+- 지시사항과 관련 없는 기존 핀은 반드시 keep에 넣어 그대로 유지하세요
+- 수정이 필요한 핀만 update, 새 핀은 add, 불필요한 핀은 remove
+- 기존 핀이 없으면 keep/update/remove는 빈 배열, add에만 내용 작성`;
 
     const userMessage = `## 채널 현재 상태\n${channelInfo}\n\n## 지시사항\n${instruction}`;
 
@@ -320,18 +330,20 @@ ${availableRoles.map((r) => `- ${r}`).join('\n')}
       return interaction.editReply({ content: `**지시사항:** ${instruction}\n\n❌ LLM 응답 파싱 실패:\n\`\`\`\n${raw.slice(0, 500)}\n\`\`\`` });
     }
 
-    const { topic, pins } = parsed;
-    if (typeof topic !== 'string' || !Array.isArray(pins)) {
+    const { topic, pinChanges } = parsed;
+    if (typeof topic !== 'string' || !pinChanges || typeof pinChanges !== 'object') {
       return interaction.editReply({ content: '❌ LLM이 올바른 형식으로 응답하지 않았습니다.' });
     }
 
-    console.log(`[/channel setup] 토픽: "${topic}", 핀 ${pins.length}개`);
+    const keep   = Array.isArray(pinChanges.keep)   ? pinChanges.keep   : [];
+    const update = Array.isArray(pinChanges.update)  ? pinChanges.update  : [];
+    const add    = Array.isArray(pinChanges.add)     ? pinChanges.add    : [];
+    const remove = Array.isArray(pinChanges.remove)  ? pinChanges.remove  : [];
 
-    // 기존 핀 전부 해제
+    console.log(`[/channel setup] 토픽: "${topic}", keep:${keep.length} update:${update.length} add:${add.length} remove:${remove.length}`);
+
+    // 현재 핀 목록 (처리 기준)
     const existing = await channel.messages.fetchPinned();
-    for (const msg of existing.values()) {
-      await msg.unpin().catch(() => {});
-    }
 
     // 토픽 설정
     console.log('[/channel setup] 토픽 설정 중...');
@@ -339,17 +351,47 @@ ${availableRoles.map((r) => `- ${r}`).join('\n')}
       throw new Error(`토픽 설정 실패 (채널 관리 권한 필요): ${err.message}`);
     });
 
-    // 새 핀 메시지 작성 + 고정
-    for (let i = 0; i < pins.length; i++) {
-      console.log(`[/channel setup] 핀 메시지 ${i + 1}/${pins.length} 작성 중...`);
-      const msg = await channel.send(pins[i]);
-      await msg.pin().catch((err) => {
-        throw new Error(`핀 고정 실패 (Discord 서버 설정 → CmdBot 역할 → "메시지 관리" 권한 필요): ${err.message}`);
-      });
+    // remove: 핀 해제 (메시지는 채널에 남음)
+    for (const id of remove) {
+      const msg = existing.get(id);
+      if (msg) {
+        await msg.unpin().catch(() => {});
+        console.log(`[/channel setup] 핀 해제: ${id}`);
+      }
     }
 
+    // update: 기존 핀 해제 → 새 내용으로 메시지 작성 → 핀 고정
+    for (const { id, content } of update) {
+      const old = existing.get(id);
+      if (old) await old.unpin().catch(() => {});
+      const msg = await channel.send(content);
+      await msg.pin().catch((err) => {
+        throw new Error(`핀 고정 실패 (메시지 관리 권한 필요): ${err.message}`);
+      });
+      console.log(`[/channel setup] 핀 수정: ${id} → ${msg.id}`);
+    }
+
+    // add: 새 메시지 작성 + 핀 고정
+    for (let i = 0; i < add.length; i++) {
+      const msg = await channel.send(add[i]);
+      await msg.pin().catch((err) => {
+        throw new Error(`핀 고정 실패 (메시지 관리 권한 필요): ${err.message}`);
+      });
+      console.log(`[/channel setup] 핀 추가: ${msg.id}`);
+    }
+
+    // keep: 아무것도 하지 않음 (기존 핀 그대로 유지)
+    console.log(`[/channel setup] 유지된 핀: ${keep.length}개`);
+
+    const summary = [
+      keep.length   > 0 ? `유지 ${keep.length}개`   : '',
+      update.length > 0 ? `수정 ${update.length}개` : '',
+      add.length    > 0 ? `추가 ${add.length}개`    : '',
+      remove.length > 0 ? `제거 ${remove.length}개` : '',
+    ].filter(Boolean).join(', ');
+
     await interaction.editReply({
-      content: `**지시사항:** ${instruction}\n\n✅ 완료 — 토픽 1개, 핀 메시지 ${pins.length}개 설정됨`,
+      content: `**지시사항:** ${instruction}\n\n✅ 완료 — ${summary || '변경 없음'}`,
     });
   } catch (err) {
     console.error('[/channel setup] 오류:', err);
