@@ -26,6 +26,13 @@ import { fetchRoleContent } from './roleContext';
 const PROPOSAL_TTL = 24 * 60 * 60 * 1000;
 
 /**
+ * 역할 핀 내용의 권장 최대 크기 (chars).
+ * 이 값을 넘으면 LLM에게 내용 정리(pruning)를 명시적으로 요청합니다.
+ * 역할 내용은 매 LLM 호출 시 system prompt에 주입되므로 토큰 비용에 직결됩니다.
+ */
+const ROLE_CONTENT_SOFT_BUDGET = 1500;
+
+/**
  * 완료된 사이클의 태스크 결과에서 이슈 요약을 추출합니다.
  */
 function extractIssues(graph: TaskGraphData): string {
@@ -84,15 +91,43 @@ async function generateProposals(
 ): Promise<Array<{ targetRole: string; roleChannelId: string; newContent: string; reasoning: string }>> {
   if (issuesSummary === '(이슈 없음 — 정상 완료)') return [];
 
-  // 역할 채널 핀을 Discord API에서 직접 조회 (캐시 의존 없음)
-  const roleChannelSummary = (
-    await Promise.all(
-      Object.entries(roleChannels).map(async ([role, id]) => {
-        const content = await fetchRoleContent(client, id);
-        return `### ${role} 채널 (ID: ${id})\n${content.slice(0, 800) || '(내용 없음)'}`;
-      }),
-    )
-  ).join('\n\n');
+  // 역할 채널 핀을 Discord API에서 직접 조회 (캐시 의존 없음) + 크기 측정
+  const roleContentMap: Record<string, { content: string; size: number; overBudget: boolean }> = {};
+  await Promise.all(
+    Object.entries(roleChannels).map(async ([role, id]) => {
+      const content = await fetchRoleContent(client, id);
+      const size = content.length;
+      roleContentMap[role] = {
+        content,
+        size,
+        overBudget: size > ROLE_CONTENT_SOFT_BUDGET,
+      };
+    }),
+  );
+
+  const roleChannelSummary = Object.entries(roleChannels)
+    .map(([role, id]) => {
+      const { content, size, overBudget } = roleContentMap[role];
+      const sizeTag = overBudget
+        ? ` ⚠️ ${size}자 (권장 ${ROLE_CONTENT_SOFT_BUDGET}자 초과 — 정리 필요)`
+        : ` (${size}자)`;
+      return `### ${role}${sizeTag}\nID: ${id}\n${content || '(내용 없음)'}`;
+    })
+    .join('\n\n');
+
+  const overBudgetRoles = Object.entries(roleContentMap)
+    .filter(([, v]) => v.overBudget)
+    .map(([role]) => role);
+
+  const pruningInstruction = overBudgetRoles.length > 0
+    ? `\n\n## ⚠️ 토큰 예산 초과 역할: ${overBudgetRoles.join(', ')}
+역할 내용은 매 LLM 호출마다 system prompt에 주입되므로 크기가 토큰 비용에 직결됩니다.
+위 역할은 내용 정리가 필요합니다. newContent 작성 시 다음을 반드시 적용하세요:
+- 한 번도 위반되지 않은 규칙 → 삭제
+- 중복·유사한 내용 → 하나로 통합
+- 예시 코드 블록 → 제거 또는 1줄 요약으로 대체
+- 목표: 핵심 지침만 남겨 ${ROLE_CONTENT_SOFT_BUDGET}자 이내로 압축`
+    : '';
 
   const prompt = `당신은 AI 에이전트 팀의 오케스트레이터입니다.
 방금 완료된 작업 사이클을 회고하고 역할 정의를 개선하는 역할을 합니다.
@@ -103,23 +138,28 @@ ${graph.goal}
 ## 발생한 이슈
 ${issuesSummary}
 
-## 현재 역할 채널 내용
-${roleChannelSummary}
+## 현재 역할 채널 내용 (크기 포함)
+${roleChannelSummary}${pruningInstruction}
 
 ## 지시
-위 이슈를 분석하여, 다음에 같은 실수가 반복되지 않도록 역할 핀 내용을 개선하세요.
-개선이 필요한 역할에 대해서만 제안하고, 불필요한 변경은 하지 마세요.
+위 이슈를 분석하여 역할 핀을 개선하세요. 다음 두 가지를 모두 고려하세요:
+
+1. **추가**: 이번 이슈를 막을 수 있었던 구체적 지침을 추가
+2. **정리**: 불필요해진 내용, 중복, 한 번도 위반되지 않은 규칙은 제거
+
+개선이 필요한 역할에 대해서만 제안하세요.
+newContent는 추가와 정리가 모두 반영된 최종 전체 내용이어야 합니다.
 
 반드시 다음 JSON 형식으로만 응답하세요:
 [
   {
-    "targetRole": "역할명 (developer/reviewer/tester/planner/researcher 중 하나)",
-    "reasoning": "왜 이 역할의 핀을 수정해야 하는지 (1-2문장)",
-    "newContent": "새 핀 전체 내용 (기존 핀을 개선한 완전한 버전, 마크다운)"
+    "targetRole": "역할명 (orchestrator/planner/developer/reviewer/tester/researcher 중 하나)",
+    "reasoning": "추가 내용과 정리 내용을 각각 1문장으로 설명",
+    "newContent": "최종 핀 전체 내용 (마크다운, ${ROLE_CONTENT_SOFT_BUDGET}자 이내 권장)"
   }
 ]
 
-개선이 필요 없으면 빈 배열 [] 을 반환하세요.`;
+변경이 전혀 필요 없으면 빈 배열 [] 을 반환하세요.`;
 
   try {
     const { text } = await llm.chat(
