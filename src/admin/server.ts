@@ -16,6 +16,7 @@ import type { Agent } from '../agent';
 import type { AppConfig } from '../config';
 import { createDiscordRouter } from './routes/discord';
 import { createConfigRouter } from './routes/config';
+import { createRoleUpdateRouter } from './routes/roleUpdate';
 
 export function startAdminServer(
   agents: Agent[],
@@ -35,6 +36,7 @@ export function startAdminServer(
   // API 라우트 — appCfg를 참조로 넘기므로 guildId 변경 시 즉시 반영
   app.use('/api/discord', createDiscordRouter(clients, appCfg));
   app.use('/api/config', createConfigRouter(agents, appCfg));
+  app.use('/api/role-update', createRoleUpdateRouter(agents, clients));
 
   // 슬래시 커맨드 목록 (commands/*.js 파싱)
   app.get('/api/commands', (_req, res) => {
