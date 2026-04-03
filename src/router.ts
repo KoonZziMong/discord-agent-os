@@ -44,7 +44,7 @@ const activeCycles = new Map<string, CycleState>();
 // 채널별 연속 봇 메시지 카운터 (루프 방지)
 // channelId → 연속 봇 메시지 수
 const botTurnCounter = new Map<string, number>();
-const MAX_CONSECUTIVE_BOT_TURNS = 30;
+const MAX_CONSECUTIVE_BOT_TURNS = 100;
 
 // ── 유틸 ──────────────────────────────────────────────────────
 
