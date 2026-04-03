@@ -41,6 +41,11 @@ import type { CycleState } from './agentProtocol';
 // cycleId → CycleState
 const activeCycles = new Map<string, CycleState>();
 
+// 채널별 연속 봇 메시지 카운터 (루프 방지)
+// channelId → 연속 봇 메시지 수
+const botTurnCounter = new Map<string, number>();
+const MAX_CONSECUTIVE_BOT_TURNS = 10;
+
 // ── 유틸 ──────────────────────────────────────────────────────
 
 /**
@@ -235,17 +240,62 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
   return async function handle(message: Message, sourceClient: Client): Promise<void> {
     // ── 봇 메시지 처리 ──────────────────────────────────────
     if (message.author.bot) {
-      // 알려진 에이전트 봇 + [AGENT_MSG] 봉투 → 하네스 라우팅
-      if (
-        agentIds.has(message.author.id) &&
-        isAgentMessage(message.content) &&
-        // primaryClient 하나만 처리 (중복 방지)
-        sourceClient.user?.id === primaryClient.user?.id
-      ) {
-        await handleHarnessMessage(message, agents, appCfg, primaryClient);
+      // primaryClient 하나만 처리 (중복 방지)
+      if (sourceClient.user?.id !== primaryClient.user?.id) return;
+
+      if (agentIds.has(message.author.id)) {
+        // [AGENT_MSG] 봉투 → 하네스 라우팅 (기존)
+        if (isAgentMessage(message.content)) {
+          await handleHarnessMessage(message, agents, appCfg, primaryClient);
+          return;
+        }
+
+        // 봇 @멘션 → 멘션된 봇에게 전달
+        const mentionedAgent = agents.find((a) => message.mentions.users.has(a.id));
+        if (mentionedAgent) {
+          const chId = message.channelId;
+          const turns = (botTurnCounter.get(chId) ?? 0) + 1;
+
+          if (turns > MAX_CONSECUTIVE_BOT_TURNS) {
+            console.warn(`[라우터] 연속 봇 턴 한도 초과 (채널: ${chId}) — 라우팅 중단`);
+            const ch = message.channel as TextChannel;
+            await ch.send(
+              `🛑 **[봇 루프 방지]** 연속 봇 메시지가 ${MAX_CONSECUTIVE_BOT_TURNS}회를 초과했습니다. 유저가 직접 개입해 주세요.`,
+            );
+            botTurnCounter.delete(chId);
+            return;
+          }
+
+          botTurnCounter.set(chId, turns);
+          history.addMessage(chId, {
+            authorId: message.author.id,
+            authorName: message.member?.displayName ?? message.author.username,
+            content: message.content,
+          });
+
+          console.log(`[라우터] 봇 멘션 라우팅: ${message.author.username} → ${mentionedAgent.name} (turn ${turns})`);
+          const agentCh = await mentionedAgent.botClient.channels.fetch(chId).catch(() => null) as TextChannel | null;
+          if (!agentCh) return;
+
+          try {
+            const responseText = await mentionedAgent.respondInCollab(chId);
+            history.addMessage(chId, {
+              authorId: mentionedAgent.id,
+              authorName: mentionedAgent.name,
+              content: responseText,
+            });
+            await sendSplit(agentCh, responseText);
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`[라우터] 봇 멘션 응답 오류 (${mentionedAgent.name}): ${msg}`);
+          }
+        }
       }
       return;
     }
+
+    // 유저 메시지가 오면 해당 채널의 봇 턴 카운터 리셋
+    botTurnCounter.delete(message.channelId);
 
     const channelId = message.channelId;
 
