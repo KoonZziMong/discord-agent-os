@@ -77,6 +77,7 @@ async function handleCommand(
   if (cmd === 'help') {
     const cmds = appCfg.commands;
     const taskPrefixes = cmds.task.map((p) => `\`${p}\``).join(' / ');
+    const autonomousPrefixes = cmds.autonomous.map((p) => `\`${p}\``).join(' / ');
     const personaPrefixes = cmds.persona.map((p) => `\`${p}\``).join(' / ');
     const helpPrefixes = cmds.help.map((p) => `\`${p}\``).join(' / ');
     const agentNames = appCfg.agents.map((a) => `@${a.name}`);
@@ -84,7 +85,8 @@ async function handleCommand(
     const help = [
       `**${agent.name} 사용 가이드**`,
       '',
-      `→ ${taskPrefixes} <목표> — AI가 자동으로 작업을 수행합니다`,
+      `→ ${taskPrefixes} <목표> — 오케스트레이터가 팀에 위임하여 수행합니다`,
+      `→ ${autonomousPrefixes} <목표> — 단독 에이전트 자동 파이프라인으로 수행합니다`,
       `→ ${personaPrefixes} — 현재 페르소나 확인`,
       `→ ${helpPrefixes} — 이 메시지 표시`,
       '',
@@ -250,8 +252,8 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
           return;
         }
 
-        // 봇 @멘션 → 멘션된 봇들에게 병렬 전달
-        const mentionedAgents = agents.filter((a) => message.mentions.users.has(a.id));
+        // 봇 @멘션 → 멘션된 봇들에게 병렬 전달 (자기 자신 제외 — 상태 메시지가 goal을 echo할 때 자기 멘션 방지)
+        const mentionedAgents = agents.filter((a) => message.mentions.users.has(a.id) && a.id !== message.author.id);
         if (mentionedAgents.length > 0) {
           const chId = message.channelId;
           const turns = (botTurnCounter.get(chId) ?? 0) + 1;
@@ -339,9 +341,29 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
       return;
     }
 
+    // !목표 / !task → 오케스트레이터 LLM이 Role 핀에 따라 팀 위임 처리
+    // 목표 텍스트를 히스토리에 추가 후 respond() 호출 → [AGENT_MSG]로 planner/developer 등에 위임
+    // (단독 에이전트로 자동 파이프라인 실행이 필요하면 !자율 명령 사용)
     const taskPrefix = cmds.task.find((p) => trimmed.startsWith(p + ' '));
     if (taskPrefix) {
-      const goal = trimmed.slice(taskPrefix.length).trim();
+      // Discord 봇 멘션(<@id>) 제거 — 목표 텍스트가 상태 메시지로 echo될 때 재라우팅 방지
+      const goal = trimmed.slice(taskPrefix.length).trim().replace(/<@!?\d+>/g, '').trim();
+      if (goal) {
+        history.addMessage(channelId, {
+          authorId: message.author.id,
+          authorName: message.member?.displayName ?? message.author.username,
+          content: goal,
+        });
+        const services = extractToolServices(message, appCfg.toolBots);
+        await mentionedAgent.respond(message, 'chat', services);
+        return;
+      }
+    }
+
+    // !자율 / !pipeline → 단독 에이전트 자동 파이프라인 (LLM 위임 없이 내부 실행)
+    const autonomousPrefix = cmds.autonomous?.find((p) => trimmed.startsWith(p + ' '));
+    if (autonomousPrefix) {
+      const goal = trimmed.slice(autonomousPrefix.length).trim().replace(/<@!?\d+>/g, '').trim();
       if (goal) {
         await mentionedAgent.startTaskGraph(message, goal);
         return;
