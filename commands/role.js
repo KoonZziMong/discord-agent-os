@@ -572,19 +572,32 @@ async function handleReset(interaction) {
     }
 
     for (const role of DEFAULT_ROLES) {
-      const channel = guild.channels.cache.find(
+      const existing = guild.channels.cache.find(
         (c) => c.parentId === category.id && c.name === role.name,
       );
-      if (!channel) {
-        log.push(`  ⚠️  #${role.name} — 채널 없음, 스킵`);
+
+      // 채널 없으면 생성 (init 이후 코드에 추가된 역할 채널 처리)
+      if (!existing) {
+        const channel = await guild.channels.create({
+          name: role.name,
+          type: ChannelType.GuildText,
+          parent: category.id,
+          topic: role.description,
+        });
+        const msg = await channel.send(role.content);
+        await msg.pin();
+        log.push(`  ✅ #${role.name} — 채널 생성 + 핀 등록 완료`);
         continue;
       }
 
-      const textChannel = await guild.channels.fetch(channel.id);
+      const textChannel = await guild.channels.fetch(existing.id);
 
-      // 기존 핀 전체 언핀 (메시지는 채널에 남아 히스토리 보존)
+      // 기존 역할 내용 핀만 언핀 (CmdBot 디폴트 핀은 유지)
       const pinned = await textChannel.messages.fetchPinned();
-      for (const msg of pinned.values()) {
+      const rolePins = [...pinned.values()].filter(
+        (m) => !m.content.trimStart().match(/^<@!?\d+>/),
+      );
+      for (const msg of rolePins) {
         await msg.unpin().catch(() => {});
       }
 
@@ -592,7 +605,7 @@ async function handleReset(interaction) {
       const newMsg = await textChannel.send(role.content);
       await newMsg.pin();
 
-      log.push(`  ✅ #${role.name} — 핀 교체 완료 (기존 ${pinned.size}개 언핀)`);
+      log.push(`  ✅ #${role.name} — 핀 교체 완료 (기존 ${rolePins.length}개 언핀)`);
     }
 
     await interaction.editReply({
