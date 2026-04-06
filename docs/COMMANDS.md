@@ -188,7 +188,7 @@ Step 3 │ 현재 채널의 봇 멘션 핀 (<@봇ID> 형식)
 ## `/project` — 프로젝트 관리
 
 프로젝트 카테고리와 채널을 일괄 생성합니다.
-각 프로젝트는 `P|{이름}` 카테고리 아래에 role 채널(Step 2)과 workspace 채널을 가집니다.
+각 프로젝트는 `{이름}` 카테고리 아래에 role 채널(Step 2)과 workspace 채널을 가집니다.
 
 ---
 
@@ -199,13 +199,13 @@ Step 3 │ 현재 채널의 봇 멘션 핀 (<@봇ID> 형식)
 **파라미터:**
 | 파라미터 | 필수 | 설명 |
 |---|---|---|
-| `name` | ✅ | 프로젝트명 (예: `테스트` → `P|테스트` 카테고리 생성) |
+| `name` | ✅ | 프로젝트명 (예: `테스트` → `테스트` 카테고리 생성) |
 | `default_role` | ❌ | `y/yes/true/1` — role 채널 생성 + ROLE 카테고리의 디폴트 봇을 workspace에 자동 매핑 |
 | `description` | ❌ | 프로젝트 설명 — CmdBot LLM이 role 채널에 프로젝트 특화 지침 자동 작성 |
 
 **생성 구조:**
 ```
-P|테스트/ (카테고리)
+테스트/ (카테고리)
   role       — Step 2 프로젝트 커스텀 지침 채널 (default_role 또는 description 시 생성)
   workspace  — 실제 작업 채널 (항상 생성)
 ```
@@ -215,7 +215,7 @@ P|테스트/ (카테고리)
 - 프로젝트별 역할 커스터마이징을 자동화할 때
 
 **주요 동작:**
-1. `P|{name}` 카테고리 생성 (이미 있으면 스킵)
+1. `{name}` 카테고리 생성 (이미 있으면 스킵)
 2. `role` 채널 생성 (`default_role` 또는 `description` 시 — Step 2)
 3. `workspace` 채널 생성
 4. `default_role` 활성화 시:
@@ -235,8 +235,8 @@ P|테스트/ (카테고리)
 
 **완료 메시지 예시:**
 ```
-✅ P|내앱 프로젝트 생성 완료
-📁 카테고리: P|내앱 | 💬 채널: #role, #workspace | 📌 디폴트 봇 매핑 완료 | 🤖 LLM 지침 적용
+✅ 내앱 프로젝트 생성 완료
+📁 카테고리: 내앱 | 💬 채널: #role, #workspace | 📌 디폴트 봇 매핑 완료 | 🤖 LLM 지침 적용
 ```
 
 ---
@@ -415,7 +415,7 @@ AI 봇이 실행 중이거나 완료한 Task Graph를 관리합니다.
    → 역할 채널 핀 캐시 로드
 
 4. /project create name:내앱 default_role:y description:"프로젝트 설명"
-   → P|내앱 카테고리 + role + workspace 채널 일괄 생성
+   → 내앱 카테고리 + role + workspace 채널 일괄 생성
    → 디폴트 봇 workspace 자동 매핑 + LLM 프로젝트 지침 작성
 
    (개별 채널 커스터마이징이 필요하면 workspace에서)

@@ -5,7 +5,7 @@
  *   /project create — 새 프로젝트 카테고리 + 채널 일괄 생성
  *
  * 생성 구조:
- *   P|{name}/ (카테고리)
+ *   {name}/ (카테고리)
  *     role      — Step 2 프로젝트 커스텀 지침 채널 (default_role 또는 description 시 생성)
  *     workspace — 실제 작업 채널 (항상 생성)
  *
@@ -53,7 +53,7 @@ module.exports = {
         .addStringOption((opt) =>
           opt
             .setName('name')
-            .setDescription('프로젝트명 (예: 테스트 → P|테스트 카테고리 생성)')
+            .setDescription('프로젝트명 (예: 테스트 → 테스트 카테고리 생성)')
             .setRequired(true),
         )
         .addStringOption((opt) =>
@@ -91,7 +91,7 @@ async function handleCreate(interaction) {
 
   const useDefaultRole = isTruthy(defaultRoleRaw);
   const needsRoleChannel = useDefaultRole || !!description;
-  const categoryName = `P|${projectName}`;
+  const categoryName = projectName;
   const log = [];
 
   try {
