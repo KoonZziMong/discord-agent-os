@@ -147,8 +147,9 @@ async function handleCreate(interaction) {
       log.push('  💬 #workspace — 생성 완료');
     }
 
-    // 4. 디폴트 봇 매핑 (default_role = true)
-    //    ROLE 카테고리에서 디폴트 봇을 읽어 workspace 채널에 Step 3 핀 등록
+    // 4. 디폴트 봇 매핑 수집 + role 채널에 기본 핀 등록
+    //    description이 있으면 LLM(step 5)이 role 채널을 처리하므로 기본 핀은 스킵
+    //    workspace 채널은 빈 채널로 유지 (핀/메시지 없음)
     const defaultBotMap = {}; // roleName → botId[]
 
     if (useDefaultRole) {
@@ -170,7 +171,7 @@ async function handleCreate(interaction) {
             const pins = await textCh.messages.fetchPinned();
             for (const msg of pins.values()) {
               if (msg.content.trimStart().startsWith(`<@${cmdBotId}>`) && msg.content.includes('default:')) {
-                const mentionMatches = [...msg.content.matchAll(/<@!?(\d+)>/g)].slice(1); // CmdBot ID 제외
+                const mentionMatches = [...msg.content.matchAll(/<@!?(\d+)>/g)].slice(1);
                 const botIds = mentionMatches.map((m) => m[1]);
                 if (botIds.length > 0) defaultBotMap[ch.name] = botIds;
                 break;
@@ -181,18 +182,19 @@ async function handleCreate(interaction) {
 
         if (Object.keys(defaultBotMap).length === 0) {
           log.push('  ⚠️  디폴트 봇 미설정 — /role set-default 로 먼저 지정하세요');
-        } else {
-          // workspace 채널에 역할별 봇 멘션 핀 등록 (Step 3)
+        } else if (!description) {
+          // description 없을 때만 role 채널에 기본 역할 배정 핀 등록
+          // (description 있으면 step 5 LLM이 역할 배정 + 특화 내용을 함께 작성)
           const agentList = loadAgentList();
-          const workspaceTextCh = await guild.channels.fetch(workspaceChannel.id);
+          const roleChannelTextCh = await guild.channels.fetch(roleChannel.id);
 
           for (const [roleName, botIds] of Object.entries(defaultBotMap)) {
             for (const botId of botIds) {
               const botName = agentList.find((a) => a.id === botId)?.name ?? botId;
               const pinContent = `<@${botId}>\n역할: ${roleName}`;
-              const msg = await workspaceTextCh.send(pinContent);
+              const msg = await roleChannelTextCh.send(pinContent);
               await msg.pin();
-              log.push(`  📌 #workspace 핀 — ${botName} → 역할: ${roleName}`);
+              log.push(`  📌 #role 핀 — ${botName} → 역할: ${roleName}`);
             }
           }
         }
