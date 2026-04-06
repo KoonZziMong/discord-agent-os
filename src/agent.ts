@@ -266,8 +266,12 @@ export class Agent {
    * - 그 외 → 해당 MCP 서버 툴
    */
   private buildChatTools(services: string[]): AnyTool[] {
-    // claude_code 툴은 항상 포함 (개발 작업 판단은 에이전트가 자율적으로)
-    const tools: AnyTool[] = [CLAUDE_CODE_TOOL];
+    const tools: AnyTool[] = [];
+
+    // orchestrator는 claude_code 툴 없음 — 구현은 팀원에게 위임하는 역할
+    if (this.config.role !== 'orchestrator') {
+      tools.push(CLAUDE_CODE_TOOL);
+    }
 
     if (services.length === 0) return tools;
 
@@ -310,14 +314,17 @@ export class Agent {
       }
     }
 
+    const isOrchestrator = this.config.role === 'orchestrator';
     const common =
       '\n\n---\n' +
       '## 응답 규칙\n' +
       '- 응답 앞에 자신의 이름을 절대 붙이지 마세요. (예: "[찌몽] ..." 형태 금지)\n' +
       '- Discord가 자동으로 봇 이름을 표시하므로 불필요합니다.\n' +
-      '- 코드 작성·수정·실행·테스트가 필요한 작업은 반드시 claude_code 도구를 사용하세요.\n' +
-      '- claude_code 사용이 불가능하거나 실패한 경우에는 LLM으로 직접 응답하되, ' +
-      '응답 말미에 "[⚠️ claude_code 미사용]" 태그와 함께 사용하지 못한 이유를 간략히 명시하세요.';
+      (isOrchestrator
+        ? '- 오케스트레이터는 도구를 직접 실행하지 않습니다. 모든 실행 작업은 팀원에게 @멘션으로 위임하세요.'
+        : '- 코드 작성·수정·실행·테스트가 필요한 작업은 반드시 claude_code 도구를 사용하세요.\n' +
+          '- claude_code 사용이 불가능하거나 실패한 경우에는 LLM으로 직접 응답하되, ' +
+          '응답 말미에 "[⚠️ claude_code 미사용]" 태그와 함께 사용하지 못한 이유를 간략히 명시하세요.');
 
     if (mode === 'config') {
       return (
