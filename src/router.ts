@@ -341,26 +341,20 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
       return;
     }
 
-    // !목표 / !task → 오케스트레이터 LLM이 Role 핀에 따라 팀 위임 처리
-    // 목표 텍스트를 히스토리에 추가 후 respond() 호출 → [AGENT_MSG]로 planner/developer 등에 위임
-    // (단독 에이전트로 자동 파이프라인 실행이 필요하면 !자율 명령 사용)
+    // !목표 / !task → Task Graph 생성 (T1/T2/T3 계획 표시) 후 팀 위임 실행
+    // 오케스트레이터는 claude_code 툴이 없으므로 직접 실행 불가 → 팀원 @멘션으로 위임
+    // (단독 에이전트 대화 응답이 필요하면 그냥 @멘션 대화 사용)
     const taskPrefix = cmds.task.find((p) => trimmed.startsWith(p + ' '));
     if (taskPrefix) {
       // Discord 봇 멘션(<@id>) 제거 — 목표 텍스트가 상태 메시지로 echo될 때 재라우팅 방지
       const goal = trimmed.slice(taskPrefix.length).trim().replace(/<@!?\d+>/g, '').trim();
       if (goal) {
-        history.addMessage(channelId, {
-          authorId: message.author.id,
-          authorName: message.member?.displayName ?? message.author.username,
-          content: goal,
-        });
-        const services = extractToolServices(message, appCfg.toolBots);
-        await mentionedAgent.respond(message, 'chat', services);
+        await mentionedAgent.startTaskGraph(message, goal);
         return;
       }
     }
 
-    // !자율 / !pipeline → 단독 에이전트 자동 파이프라인 (LLM 위임 없이 내부 실행)
+    // !자율 / !pipeline → 단독 에이전트 자동 파이프라인 (내부 planner→developer→reviewer→tester)
     const autonomousPrefix = cmds.autonomous?.find((p) => trimmed.startsWith(p + ' '));
     if (autonomousPrefix) {
       const goal = trimmed.slice(autonomousPrefix.length).trim().replace(/<@!?\d+>/g, '').trim();
