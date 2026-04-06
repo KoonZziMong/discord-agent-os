@@ -39,7 +39,10 @@ src/
 ```
 
 단일 Node.js 프로세스에서 복수의 Discord 클라이언트가 동시 실행됩니다.
-`!목표 <goal>` → planner → developer → reviewer → tester 파이프라인으로 Task Graph를 실행합니다.
+
+- `!목표 <goal>` — 오케스트레이터 LLM이 Role 핀에 따라 `[AGENT_MSG]`로 팀에 위임합니다.
+- `!자율 <goal>` — 단일 에이전트가 planner→developer→reviewer→tester 파이프라인을 직접 실행합니다.
+
 봇 간 통신은 `[AGENT_MSG]` 봉투 프로토콜로 이루어지며, turn 한도/rate-limit/루프 감지로 보호됩니다.
 
 **중요:** `commands/` 폴더는 CmdBot 전용 슬래시 커맨드이며, AI 에이전트 파이프라인과 무관하다.

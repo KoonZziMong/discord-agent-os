@@ -30,20 +30,35 @@ interface AgentConfig {
 전체 시스템 설정입니다.
 
 ```typescript
+interface CmdBotConfig {
+  discordToken: string;
+  provider?: string;
+  apiKey?: string;
+  model?: string;
+}
+
+interface CommandsConfig {
+  persona: string[];    // 기본: ["!페르소나", "!persona"]
+  help: string[];       // 기본: ["!도움말", "!help"]
+  task: string[];       // 기본: ["!목표", "!task"] — LLM 위임 방식
+  autonomous: string[]; // 기본: ["!자율", "!pipeline"] — 단독 자동 파이프라인
+}
+
 interface AppConfig {
   agents: AgentConfig[];
-  cmdBot: { token: string; clientId: string };
+  cmdBot?: CmdBotConfig;
   collabChannel: string;          // 협력 채널 ID
-  guildId: string;                // Discord 서버 ID
+  guildId?: string;               // Discord 서버 ID
   adminPort: number;              // 관리 웹 서버 포트 (기본 3000)
-  toolBots: string[];             // 툴봇 ID 목록
-  historyLimit: number;           // 채널당 히스토리 보관 건수
+  adminHost?: string;             // 바인딩 호스트 (기본 127.0.0.1)
+  toolBots: Record<string, string>; // 툴봇 username → MCP 서버명 매핑
+  historyLimit: number;           // 채널당 히스토리 보관 건수 (기본 20)
   channelLimits: Record<string, number>;
   githubRepos: string[];          // 글로벌 레포 목록
-  commands: Record<string, unknown>;
-  maxReviewRetries: number;       // reviewerNode 최대 재시도 횟수
+  commands: CommandsConfig;
+  maxReviewRetries: number;       // reviewerNode 최대 재시도 횟수 (기본 2)
   maxTurnsPerCycle: number;       // 사이클당 최대 봇 턴 (기본 12)
-  maxCycleMinutes: number;        // 사이클 최대 시간(분)
+  maxCycleMinutes: number;        // 사이클 최대 시간(분, 기본 30)
   autonomousRoleUpdates: boolean; // false이면 역할 핀 변경에 유저 컨펌 필요
 }
 ```

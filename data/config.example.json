@@ -7,10 +7,15 @@
   "maxCycleMinutes": 30,
   "maxReviewRetries": 2,
   "autonomousRoleUpdates": false,
-  "toolBots": [],
+  "toolBots": {},
   "githubRepos": [],
   "channelLimits": {},
-  "commands": {},
+  "commands": {
+    "persona": ["!페르소나", "!persona"],
+    "help": ["!도움말", "!help"],
+    "task": ["!목표", "!task"],
+    "autonomous": ["!자율", "!pipeline"]
+  },
   "agents": [
     {
       "id": "BOT_DISCORD_USER_ID",
@@ -27,7 +32,6 @@
     }
   ],
   "cmdBot": {
-    "token": "CMDBOT_DISCORD_TOKEN",
-    "clientId": "CMDBOT_CLIENT_ID"
+    "discordToken": "CMDBOT_DISCORD_TOKEN"
   }
 }

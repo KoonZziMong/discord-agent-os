@@ -49,8 +49,16 @@ export interface CommandsConfig {
   persona: string[];
   /** 도움말 명령어 목록 (기본: ["!도움말", "!help"]) */
   help: string[];
-  /** 태스크 목표 실행 prefix 목록 (기본: ["!목표", "!task"]) */
+  /**
+   * 멀티-에이전트 목표 위임 prefix 목록 (기본: ["!목표", "!task"])
+   * 오케스트레이터 LLM이 Role 핀에 따라 팀에 [AGENT_MSG]로 위임합니다.
+   */
   task: string[];
+  /**
+   * 단독 에이전트 자동 파이프라인 prefix 목록 (기본: ["!자율", "!pipeline"])
+   * LLM 위임 없이 planner→developer→reviewer→tester 파이프라인을 직접 실행합니다.
+   */
+  autonomous: string[];
 }
 
 export interface AppConfig {
@@ -148,9 +156,10 @@ export function loadConfig(): AppConfig {
     channelLimits: raw.channelLimits ?? {},
     githubRepos: raw.githubRepos ?? [],
     commands: {
-      persona: raw.commands?.persona ?? ['!페르소나', '!persona'],
-      help:    raw.commands?.help    ?? ['!도움말', '!help'],
-      task:    raw.commands?.task    ?? ['!목표', '!task'],
+      persona:    raw.commands?.persona    ?? ['!페르소나', '!persona'],
+      help:       raw.commands?.help       ?? ['!도움말', '!help'],
+      task:       raw.commands?.task       ?? ['!목표', '!task'],
+      autonomous: raw.commands?.autonomous ?? ['!자율', '!pipeline'],
     },
     maxReviewRetries: raw.maxReviewRetries ?? 2,
     maxTurnsPerCycle: raw.maxTurnsPerCycle ?? 12,

@@ -107,7 +107,15 @@ export function getHistory(
     return { role: 'user' as const, content };
   });
 
-  return mergeConsecutiveRoles(raw);
+  const merged = mergeConsecutiveRoles(raw);
+
+  // Anthropic API는 마지막 메시지가 반드시 user여야 합니다.
+  // assistant로 끝나는 경우(봇이 자기 메시지에 응답하려는 경쟁 조건 등) 해당 메시지를 제거합니다.
+  while (merged.length > 0 && merged[merged.length - 1].role === 'assistant') {
+    merged.pop();
+  }
+
+  return merged;
 }
 
 // ── 내부 헬퍼 ─────────────────────────────────────────────

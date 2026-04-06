@@ -61,29 +61,34 @@ npm install
 
 ### 2. 환경 설정
 
+이 프로젝트는 `.env`를 사용하지 않습니다. 모든 설정은 `data/config.json` 단일 파일로 관리합니다.
+
 ```bash
-cp .env.example .env
-# .env 파일에서 DISCORD_TOKEN, ANTHROPIC_API_KEY 등 설정
+cp data/config.example.json data/config.json
 ```
 
 `data/config.json`을 작성합니다:
 
 ```jsonc
 {
-  "historyLimit": 50,
+  "guildId": "DISCORD_SERVER_ID",
   "collabChannel": "COLLAB_CHANNEL_ID",
+  "adminPort": 3000,
+  "historyLimit": 50,
   "cmdBot": {
     "discordToken": "CMDBOT_TOKEN"
   },
   "agents": [
     {
-      "id": "zzimong",
+      "id": "BOT_DISCORD_USER_ID",
       "name": "찌몽",
+      "role": "orchestrator",
       "discordToken": "BOT_TOKEN",
-      "chatChannel": "CHAT_CHANNEL_ID",
-      "configChannel": "CONFIG_CHANNEL_ID",
-      "personaFile": "data/personas/agent-a.md",
-      "anthropicApiKey": "sk-ant-...",
+      "personaFile": "/absolute/path/data/personas/CHANNEL_ID.md",
+      "provider": "anthropic",
+      "apiKey": "sk-ant-...",
+      "model": "claude-opus-4-6",
+      "mcpTokens": {},
       "githubRepo": "owner/repo"
     }
   ]
