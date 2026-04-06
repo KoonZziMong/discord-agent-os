@@ -4,7 +4,7 @@
 
 | 문서 | 내용 |
 |---|---|
-| [architecture.md](./architecture.md) | 전체 시스템 구조 이해 |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | 전체 시스템 구조 이해 |
 | [development.md](./development.md) | 코드 컨벤션 및 개발 환경 |
 | [api.md](./api.md) | 내부 인터페이스 명세 |
 | [getting-started.md](./getting-started.md) | 로컬 환경 구축 |
