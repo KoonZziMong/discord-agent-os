@@ -136,11 +136,11 @@ async function handleSetup(interaction) {
     // 에이전트 목록 로드 (봇 멘션 생성 시 정확한 ID 제공용)
     const agentList = loadAgentList();
 
-    // '역할' 카테고리 채널 목록 + 디폴트 봇 정보 조회
+    // 'role' 카테고리 채널 목록 + 디폴트 봇 정보 조회
     const guild = interaction.guild;
     const cmdBotId = interaction.client.user.id;
     const roleCategory = guild?.channels.cache.find(
-      (c) => c.type === 4 /* GuildCategory */ && c.name === '역할',
+      (c) => c.type === 4 /* GuildCategory */ && c.name.toLowerCase() === 'role',
     );
     const availableRoles = roleCategory
       ? guild.channels.cache

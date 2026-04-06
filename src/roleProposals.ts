@@ -23,6 +23,7 @@ export interface RoleProposal {
   channelId: string;        // 제안 메시지가 있는 채널 ID
   createdAt: number;        // Date.now()
   expiresAt: number;        // Date.now() + 24h (기본)
+  proposalScope?: 'global' | 'project'; // global=step1(글로벌 역할), project=step2(프로젝트 커스텀). 없으면 global로 간주
 }
 
 function ensureDir(): void {

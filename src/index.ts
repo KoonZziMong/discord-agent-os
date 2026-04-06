@@ -223,7 +223,7 @@ async function main(): Promise<void> {
 
     if (guild) {
       const roleCategory = guild.channels.cache.find(
-        (c) => c.type === 4 /* GuildCategory */ && c.name === '역할',
+        (c) => c.type === 4 /* GuildCategory */ && c.name.toLowerCase() === 'role',
       );
       if (roleCategory) {
         const roleChannels = guild.channels.cache.filter(

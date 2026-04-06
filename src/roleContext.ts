@@ -6,7 +6,20 @@
  *
  * 채널에 역할 설정이 없으면 역할 채널의 디폴트 봇 설정을 폴백으로 사용합니다.
  *
- * 역할 레이어 우선순위:
+ * ## 역할 컨텍스트 3단계 로딩
+ *
+ * Step 1 — ROLE 카테고리 채널 (role/developer 등)
+ *   모든 프로젝트에 공통 적용되는 글로벌 역할 정의.
+ *   `/role init`으로 생성, `/role reset`으로 초기화.
+ *
+ * Step 2 — 현재 채널의 카테고리 안 "role" 채널 (프로젝트A/role)
+ *   이 프로젝트(카테고리)에만 적용되는 커스텀 지침.
+ *   직접 생성 후 핀 작성, 또는 회고를 통해 자동 제안됨.
+ *
+ * Step 3 — 현재 채널의 봇 멘션 핀 (<@botId> 형식)
+ *   이 채널에만 적용되는 개별 설정. `/channel setup`으로 관리.
+ *
+ * 역할 레이어 우선순위 (기존):
  *   1. 채널 핀에 역할 설정 없음 → config.role의 디폴트 역할 채널 내용 주입
  *   2. 채널 핀 역할 = 디폴트 역할 → 디폴트 핀 + 채널 디테일 누적
  *   3. 채널 핀 역할 ≠ 디폴트 역할 → 채널 역할 핀으로 완전 대체
@@ -80,6 +93,38 @@ export function invalidateRoleChannelIdCache(): void {
 }
 
 /**
+ * 현재 채널이 속한 카테고리 안의 "role" 채널 ID를 반환합니다. (Step 2)
+ *
+ * - 현재 채널의 parentId(카테고리)를 구함
+ * - 같은 카테고리 안에서 이름이 "role"인 텍스트 채널을 찾아 반환
+ * - ROLE 카테고리 자체에 속한 채널이면 null (step 1과 중복 방지)
+ * - 결과는 `cat:{categoryId}` 키로 캐싱됩니다.
+ */
+export function getCategoryRoleChannelId(guild: Guild, currentChannelId: string): string | null {
+  const currentChannel = guild.channels.cache.get(currentChannelId);
+  if (!currentChannel || !currentChannel.parentId) return null;
+
+  const categoryId = currentChannel.parentId;
+
+  // 현재 채널이 ROLE 카테고리 소속이면 step 2 없음 (순환 방지)
+  const roleCategory = guild.channels.cache.find(
+    (c) => c.type === 4 /* GuildCategory */ && c.name.toLowerCase() === 'role',
+  );
+  if (roleCategory && categoryId === roleCategory.id) return null;
+
+  const cacheKey = `cat:${categoryId}`;
+  if (roleChannelIdCache.has(cacheKey)) return roleChannelIdCache.get(cacheKey)!;
+
+  const roleChannel = guild.channels.cache.find(
+    (c) => c.parentId === categoryId && c.type === 0 /* GuildText */ && c.name.toLowerCase() === 'role',
+  );
+
+  const result = roleChannel?.id ?? null;
+  if (result) roleChannelIdCache.set(cacheKey, result);
+  return result;
+}
+
+/**
  * '역할' 카테고리에서 roleName에 해당하는 채널 ID를 반환합니다.
  * 결과는 메모리에 캐싱됩니다.
  */
@@ -87,7 +132,7 @@ export function getRoleChannelId(guild: Guild, roleName: string): string | null 
   if (roleChannelIdCache.has(roleName)) return roleChannelIdCache.get(roleName)!;
 
   const category = guild.channels.cache.find(
-    (c) => c.type === 4 /* GuildCategory */ && c.name === '역할',
+    (c) => c.type === 4 /* GuildCategory */ && c.name.toLowerCase() === 'role',
   );
   if (!category) return null;
 
@@ -178,11 +223,10 @@ export async function getDefaultBotsForRole(
 /**
  * 지정된 채널의 컨텍스트에서 봇 전용 핀을 찾아 역할 내용을 반환합니다.
  *
- * 역할 레이어 로직:
- *   - 채널 핀에 역할 설정 없음 → defaultRole의 역할 채널 내용 반환
- *   - 채널 핀 역할 = defaultRole → 역할 채널 내용 + 채널 디테일 누적
- *   - 채널 핀 역할 ≠ defaultRole → 채널 역할 채널 내용으로 대체
- *   - 여러 역할 → 모두 누적
+ * ## 3단계 로딩 순서
+ *   Step 1: ROLE 카테고리 채널 (글로벌 역할 정의)
+ *   Step 2: 현재 채널의 카테고리 안 "role" 채널 (프로젝트 커스텀 지침)
+ *   Step 3: 현재 채널의 봇 멘션 핀 (채널 개별 설정)
  *
  * @param client      Discord Client
  * @param botId       이 봇의 Discord user ID
@@ -208,7 +252,7 @@ export async function getRoleContent(
   // 채널 핀에서 역할 목록 파싱
   const channelRoles = botPin ? parseAgentRoles(botPin) : [];
 
-  // 채널 핀의 추가 디테일 (역할채널/역할 라인 제외한 나머지)
+  // 채널 핀의 추가 디테일 (역할채널/역할 라인 제외한 나머지) — Step 3
   const channelDetail = botPin
     ? botPin
         .split('\n')
@@ -217,14 +261,16 @@ export async function getRoleContent(
         .trim()
     : '';
 
-  // 케이스 1: 채널에 역할 설정 없음 → 디폴트 역할 폴백
+  // 케이스 1: 채널에 역할 설정 없음 → 디폴트 역할 폴백 (step 2도 함께 로드)
   if (channelRoles.length === 0) {
     if (!defaultRole || !guild) return '';
-    const content = await fetchRoleContentByName(client, guild, defaultRole);
-    return content;
+    const step1 = await fetchRoleContentByName(client, guild, defaultRole);
+    const step2 = await fetchCategoryRoleContent(client, guild, channelId, botId);
+    if (!step2) return step1;
+    return [step1, `## 프로젝트 커스텀 지시\n${step2}`].filter(Boolean).join('\n\n---\n\n');
   }
 
-  // 케이스 2~4: 채널에 역할 설정 있음
+  // 케이스 2~4: 채널에 역할 설정 있음 — Step 1 로드
   const sections: string[] = [];
 
   for (const roleName of channelRoles) {
@@ -239,16 +285,73 @@ export async function getRoleContent(
       : guild ? await fetchRoleContentByName(client, guild, roleName) : '';
 
     if (roleContent) {
-      // 디폴트 역할과 같으면 누적, 다르면 대체 (결과는 동일하게 sections에 추가)
       const label = channelRoles.length > 1 ? `## 역할: ${roleName}\n` : '';
       sections.push(label + roleContent);
     }
   }
 
-  // 채널 디테일이 있으면 마지막에 추가
+  // Step 2: 현재 채널 카테고리의 "role" 채널 내용 로드
+  if (guild) {
+    const step2Content = await fetchCategoryRoleContent(client, guild, channelId, botId);
+    if (step2Content) {
+      sections.push(`## 프로젝트 커스텀 지시\n${step2Content}`);
+    }
+  }
+
+  // Step 3: 채널 디테일이 있으면 마지막에 추가
   if (channelDetail) {
     sections.push(`## 채널 추가 지시\n${channelDetail}`);
   }
 
   return sections.join('\n\n---\n\n');
+}
+
+/**
+ * 현재 채널의 카테고리 안 "role" 채널에서 봇 멘션 핀 내용을 반환합니다. (Step 2)
+ *
+ * - 카테고리 안에 "role" 채널이 없으면 빈 문자열 반환
+ * - 봇 멘션 핀(<@botId>)이 있으면 그 핀 내용 반환 (멘션 첫 줄 제외)
+ * - 봇 멘션 핀이 없으면 모든 핀 내용 반환 (공통 지시로 간주)
+ */
+export async function fetchCategoryRoleContent(
+  client: Client,
+  guild: Guild,
+  channelId: string,
+  botId: string,
+): Promise<string> {
+  const categoryRoleChannelId = getCategoryRoleChannelId(guild, channelId);
+  if (!categoryRoleChannelId) return '';
+
+  try {
+    const channel = await client.channels.fetch(categoryRoleChannelId) as TextChannel;
+    if (!channel || !('messages' in channel)) return '';
+
+    const pinned = await channel.messages.fetchPinned();
+    const pins = [...pinned.values()].reverse().filter((m) => m.content.trim().length > 0);
+
+    // 봇 전용 핀 우선 탐색
+    const botPin = pins.find((m) => {
+      const match = m.content.trimStart().match(/^<@!?(\d+)>/);
+      return match && match[1] === botId;
+    });
+
+    if (botPin) {
+      // 멘션 첫 줄 제외한 나머지 반환
+      const content = botPin.content.split('\n').slice(1).join('\n').trim();
+      return content;
+    }
+
+    // 봇 전용 핀 없으면 공통 핀 전체 반환 (CmdBot default 핀 제외)
+    const commonContent = pins
+      .filter((m) => !m.content.trimStart().match(/^<@!?\d+>\s*\ndefault:/))
+      .filter((m) => !m.content.trimStart().match(/^<@!?\d+>/))
+      .map((m) => m.content)
+      .join('\n\n---\n\n');
+
+    return commonContent;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[roleContext] 카테고리 role 채널 로드 실패 (${categoryRoleChannelId}): ${msg}`);
+    return '';
+  }
 }

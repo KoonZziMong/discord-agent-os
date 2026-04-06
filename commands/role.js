@@ -386,14 +386,14 @@ async function handleInit(interaction) {
   try {
     // 1. 역할 카테고리 찾기 또는 생성
     let category = guild.channels.cache.find(
-      (c) => c.type === ChannelType.GuildCategory && c.name === '역할',
+      (c) => c.type === ChannelType.GuildCategory && c.name.toLowerCase() === 'role',
     );
 
     if (category) {
-      log.push('📁 역할 카테고리 — 이미 존재, 스킵');
+      log.push('📁 role 카테고리 — 이미 존재, 스킵');
     } else {
       category = await guild.channels.create({
-        name: '역할',
+        name: 'role',
         type: ChannelType.GuildCategory,
       });
       log.push('📁 역할 카테고리 — 생성 완료');
@@ -476,12 +476,12 @@ async function handleReset(interaction) {
   const log = [];
 
   try {
-    // '역할' 카테고리 찾기
+    // 'role' 카테고리 찾기
     const category = guild.channels.cache.find(
-      (c) => c.type === ChannelType.GuildCategory && c.name === '역할',
+      (c) => c.type === ChannelType.GuildCategory && c.name.toLowerCase() === 'role',
     );
     if (!category) {
-      return interaction.editReply({ content: '❌ 역할 카테고리가 없습니다. 먼저 `/role init`을 실행하세요.' });
+      return interaction.editReply({ content: '❌ role 카테고리가 없습니다. 먼저 `/role init`을 실행하세요.' });
     }
 
     for (const role of DEFAULT_ROLES) {
@@ -527,12 +527,12 @@ async function handleSetDefault(interaction) {
   const botsInput = interaction.options.getString('bots');
 
   try {
-    // '역할' 카테고리에서 해당 역할 채널 찾기
+    // 'role' 카테고리에서 해당 역할 채널 찾기
     const category = guild.channels.cache.find(
-      (c) => c.type === ChannelType.GuildCategory && c.name === '역할',
+      (c) => c.type === ChannelType.GuildCategory && c.name.toLowerCase() === 'role',
     );
     if (!category) {
-      return interaction.editReply({ content: '❌ 역할 카테고리가 없습니다. 먼저 `/role init`을 실행하세요.' });
+      return interaction.editReply({ content: '❌ role 카테고리가 없습니다. 먼저 `/role init`을 실행하세요.' });
     }
 
     const roleChannel = guild.channels.cache.find(
