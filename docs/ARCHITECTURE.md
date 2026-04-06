@@ -1,179 +1,222 @@
-# 아키텍처
+# 시스템 아키텍처
 
-## 전체 구조
+## 1. 개요
+
+discord-agent-os는 Discord 서버 위에서 동작하는 멀티 에이전트 AI 시스템입니다.
+복수의 AI 봇(찌몽/아루/센세 등)이 각자 독립 채널에서 운영되며, 협력 채널에서 오케스트레이터 지휘 아래 함께 작업합니다.
 
 ```
 Discord 사용자
     │
-    ├─ 메시지 (@멘션, !목표)
-    │       └─→ AI 봇 (찌몽 / 아루 / 센세)
+    ├─ 메시지 (@멘션, !목표, !자율)
+    │       └─→ AI 봇 (찌몽 / 아루 / 센세 ...)
     │                   │
     │                   ├─ 일반 대화 → LLM 응답
-    │                   └─ !목표 → Task Graph 실행
+    │                   ├─ !목표 → 오케스트레이터가 팀에 [AGENT_MSG] 위임
+    │                   └─ !자율 → 단독 자동 파이프라인 실행
     │
-    └─ 슬래시 커맨드 (/task, /github, /status)
+    └─ 슬래시 커맨드 (/task, /github, /status, /role, /project, /channel)
             └─→ CmdBot (전담 처리)
 ```
 
-## 봇 구성
+## 2. 봇 구성
 
-프로세스 하나에서 4개의 Discord 클라이언트가 동시에 실행됩니다.
+단일 Node.js 프로세스에서 복수의 Discord 클라이언트가 동시 실행됩니다.
 
-| 봇 | 역할 | Discord 인텐트 |
+| 봇 유형 | 역할 | 인텐트 |
 |---|---|---|
-| 찌몽 / 아루 / 센세 | AI 대화 + Task Graph 실행 | Guilds, GuildMessages, MessageContent |
-| CmdBot | 슬래시 커맨드 전담 | Guilds |
+| AI 봇 (찌몽 / 아루 / 센세 등) | 대화 응답, Task Graph 실행, 하네스 참여 | Guilds, GuildMessages, MessageContent |
+| CmdBot | 슬래시 커맨드 전담 처리 | Guilds |
 
-AI 봇과 CmdBot을 분리한 이유: Discord는 봇 계정당 슬래시 커맨드를 등록하므로, 3개의 AI 봇에 커맨드를 등록하면 서버에 동일 커맨드가 3벌 노출됩니다. CmdBot에 집중시켜 이를 방지합니다.
+AI 봇과 CmdBot을 분리하는 이유: Discord는 봇 계정 단위로 슬래시 커맨드를 등록하므로, AI 봇에 직접 등록하면 서버에 동일 커맨드가 중복 노출됩니다.
 
-## 디렉토리 구조
+## 3. 모듈 맵
 
-```
-discord-agent-os/
-├── src/
-│   ├── index.ts             # 진입점 — 봇 초기화, 이벤트 바인딩, 재시작 복구
-│   ├── agent.ts             # Agent 클래스 — 대화 응답, Task Graph 실행
-│   ├── router.ts            # Discord 메시지 → 적절한 에이전트로 라우팅
-│   ├── collaboration.ts     # 협력 채널 오케스트레이터
-│   ├── llm.ts               # LLM 클라이언트 추상화 (Anthropic / OpenAI 호환)
-│   ├── mcp.ts               # MCP 서버 연결 관리
-│   ├── tools.ts             # 툴 정의 (update_persona, claude_code, Computer Use)
-│   ├── claude-code.ts       # Claude Code CLI 연동 및 세션 관리
-│   ├── history.ts           # 채널별 인메모리 대화 히스토리
-│   ├── config.ts            # data/config.json 로드 및 타입 정의
-│   ├── persona.ts           # 페르소나 파일 로드 / 수정
-│   ├── computer.ts          # macOS Computer Use 구현
-│   ├── utils.ts             # 공통 유틸리티
-│   ├── task/
-│   │   ├── types.ts         # Task / TaskGraphData 타입
-│   │   ├── graph.ts         # TaskGraph 클래스 — 상태 변경 + 영속화
-│   │   ├── planner.ts       # LLM으로 목표 → Task 배열 분해
-│   │   ├── runner.ts        # Task Graph 실행 루프 (병렬 + 실시간 상태)
-│   │   └── store.ts         # JSON 파일 I/O (data/tasks/)
-│   └── agentGraph/
-│       ├── types.ts         # WorkflowContext / WorkflowResult 인터페이스
-│       ├── executor.ts      # 파이프라인 실행기
-│       └── nodes/
-│           ├── plannerNode.ts    # LLM으로 구현 계획 수립
-│           ├── developerNode.ts  # Claude Code로 코드 작성 + Git 워크플로우
-│           ├── reviewerNode.ts   # LLM 코드 리뷰 (APPROVED / REVISION_NEEDED)
-│           └── testerNode.ts     # Claude Code로 테스트 실행 + CI 확인
-├── commands/
-│   ├── task.js              # /task 슬래시 커맨드
-│   ├── github.js            # /github 슬래시 커맨드
-│   └── status.js            # /status 슬래시 커맨드
-├── data/
-│   ├── config.json          # 봇 설정 (토큰, 채널 ID 등) — git 제외
-│   ├── personas/            # 에이전트별 페르소나 마크다운
-│   └── tasks/               # Task Graph JSON 파일 — git 제외
-└── deploy-commands.js       # 슬래시 커맨드 Discord 등록 스크립트
-```
+### `src/` 핵심 모듈
 
-## Task Graph 실행 흐름
+| 파일 | 역할 |
+|---|---|
+| `index.ts` | 진입점 — 봇 초기화, 이벤트 바인딩, graceful shutdown |
+| `agent.ts` | Agent 클래스 — 대화 응답, 툴 실행, TaskGraph 관리 |
+| `router.ts` | Discord 메시지 라우팅 (유저/봇 메시지 분기, 하네스 라우팅) |
+| `collaboration.ts` | 협력 채널 오케스트레이터 (멘션 기반 순차 응답) |
+| `agentProtocol.ts` | 봇 간 통신 프로토콜 ([AGENT_MSG] 봉투, 팀 매니페스트, 사이클 상태) |
+| `llm.ts` | LLM 클라이언트 추상화 (Anthropic / OpenAI 호환, 프롬프트 캐싱) |
+| `mcp.ts` | 봇별 MCP 서버 관리 (Claude Desktop config 읽기, subprocess 실행) |
+| `tools.ts` | 툴 정의 (update_persona, claude_code, Computer Use) |
+| `claude-code.ts` | Claude Code CLI 연동 및 세션 관리 |
+| `history.ts` | 채널별 인메모리 대화 히스토리 |
+| `channelContext.ts` | 채널 토픽 + 핀 메시지 캐시 (system prompt 주입) |
+| `roleContext.ts` | 역할 채널 컨텍스트 3단계 로딩 (글로벌/프로젝트/채널) |
+| `roleProposals.ts` | 역할 핀 업데이트 제안 관리 (파일 영속화, TTL 24h) |
+| `retrospective.ts` | 사이클 완료 후 회고 및 역할 핀 개선 제안 생성 |
+| `config.ts` | 설정 로드/저장 (`data/config.json`) |
+| `persona.ts` | 페르소나 파일 로드/수정 |
+| `computer.ts` | macOS Computer Use 구현 |
+| `utils.ts` | 공통 유틸리티 (sendSplit, keepTyping, delay, getErrorMessage) |
 
-### 1. 목표 입력
+### `src/task/` — Task Graph
 
-사용자가 `!목표 <goal>`을 입력하면 `router.ts`가 감지하고 `agent.startTaskGraph()`를 호출합니다.
+| 파일 | 역할 |
+|---|---|
+| `types.ts` | Task / TaskGraphData 타입 정의 |
+| `graph.ts` | TaskGraph 클래스 — 상태 변경 + 자동 영속화 |
+| `planner.ts` | LLM으로 목표 → Task 배열 분해 |
+| `runner.ts` | Task Graph 순차 실행 루프 |
+| `store.ts` | JSON 파일 I/O (`data/tasks/`) |
 
-### 2. Task 분해 (planner.ts)
+### `src/agentGraph/` — Agent Workflow 파이프라인
 
-LLM이 목표를 분석해 의존 관계가 있는 Task 배열로 분해합니다.
+| 파일 | 역할 |
+|---|---|
+| `types.ts` | WorkflowContext / WorkflowResult 인터페이스 |
+| `executor.ts` | 파이프라인 실행기 (planner → developer → reviewer → tester) |
+| `nodes/plannerNode.ts` | LLM으로 구현 계획 수립 |
+| `nodes/developerNode.ts` | Claude Code로 코드 작성 + Git 워크플로우 |
+| `nodes/reviewerNode.ts` | LLM 코드 리뷰 (APPROVED / REVISION_NEEDED) |
+| `nodes/testerNode.ts` | Claude Code로 테스트 실행 + CI 확인 |
 
-```
-목표: "사용자 인증 API 구현"
-  ├── [T1] DB 스키마 설계
-  ├── [T2] JWT 유틸 구현  (depends: T1)
-  ├── [T3] 로그인 엔드포인트  (depends: T2)
-  └── [T4] 테스트 작성  (depends: T3)
-```
+### `src/admin/` — 관리 웹 서버
 
-### 3. 병렬 실행 (runner.ts)
+| 파일 | 역할 |
+|---|---|
+| `server.ts` | Express 관리 웹 서버 (기본 127.0.0.1:3000) |
+| `hotreload.ts` | 설정 핫리로드 |
+| `routes/config.ts` | `/api/config` 에이전트 설정 CRUD |
+| `routes/discord.ts` | `/api/discord` 채널/봇 목록 조회 |
+| `routes/roleUpdate.ts` | `/api/role-update` 역할 핀 직접 수정 |
 
-의존성이 해소된 태스크는 `Promise.all()`로 동시에 실행됩니다. Discord에 단일 상태 메시지가 전송되고, 각 태스크 상태가 바뀔 때마다 실시간으로 수정됩니다.
+### `commands/` — CmdBot 슬래시 커맨드 (AI 파이프라인과 무관)
 
-```
-🗂️ 사용자 인증 API 구현
+| 파일 | 커맨드 |
+|---|---|
+| `channel.js` | `/channel` — 채널 컨텍스트 관리 |
+| `github.js` | `/github` — 레포 관리 |
+| `project.js` | `/project` — 프로젝트 생성/관리 |
+| `role.js` | `/role` — 역할 채널 관리 |
+| `status.js` | `/status` — 봇 상태 확인 |
+| `task.js` | `/task` — Task Graph 조회/제어 |
 
-⚙️ [T1] DB 스키마 설계 (실행 중...)
-⏳ [T2] JWT 유틸 구현
-⏳ [T3] 로그인 엔드포인트
-⏳ [T4] 테스트 작성
+## 4. 기동 순서 (`index.ts`)
 
--# 진행 0/4 | 경과 12초
-```
+1. `data/config.json` 로드 및 설정 파싱
+2. Discord Client × n(AI봇) + CmdBot Client 생성
+3. Agent 인스턴스 × n 생성 (각자 LLMClient + AgentMCPManager 보유)
+4. 봇별 MCP 서버 초기화 (병렬)
+5. 전체 봇 동시 로그인 + ready 대기
+6. 채널별 대화 히스토리 + 채널 컨텍스트(토픽+핀) 로드
+7. 협력 채널 핀에서 봇 역할 자동 감지 → `agent.config.role` 주입
+8. ROLE 카테고리 채널 핀 캐시 로드
+9. 미완료 TaskGraph 재개
+10. `messageCreate` 이벤트 → router 연결
+11. 관리 웹 서버 시작 (Express)
 
-### 4. Agent Workflow 파이프라인 (agentGraph/)
-
-각 태스크는 4단계 파이프라인으로 처리됩니다.
-
-```
-plannerNode
-    │  LLM이 태스크의 구체적 구현 계획을 작성
-    ↓
-developerNode
-    │  Claude Code CLI로 실제 코드를 작성
-    │  githubRepo 설정 시: 브랜치 생성 → 커밋 → 푸시 → PR 생성
-    ↓
-reviewerNode
-    │  LLM이 코드를 리뷰하여 APPROVED / REVISION_NEEDED 판정
-    │  REVISION_NEEDED면 developerNode 재실행 (최대 2회)
-    ↓
-testerNode
-       Claude Code CLI로 테스트 실행 (developer와 동일 세션 유지)
-       githubRepo 설정 시: gh pr checks로 CI 상태 확인
-```
-
-#### Claude Code 세션 관리
-
-태스크마다 `sessionKey = "${graphId}:${taskId}"`로 세션을 격리합니다. developer와 tester는 같은 키로 세션을 공유하므로, tester가 developer가 작성한 코드 맥락을 그대로 이어받습니다.
-
-## 메시지 라우팅
+## 5. 메시지 라우팅 흐름 (`router.ts`)
 
 ```
-messageCreate 이벤트
-    │
-    ├─ 발신자가 봇이면 → 무시 (단, 협력 채널은 봇 메시지도 히스토리에 포함)
-    ├─ 채널이 설정 채널이면 → agent.respond(mode: 'config')
-    ├─ !목표 prefix → agent.startTaskGraph()
-    ├─ 협력 채널이면 → collaboration.ts 오케스트레이터
-    └─ 그 외 → agent.respond(mode: 'chat')
+메시지 수신
+  ├─ 봇 메시지
+  │   ├─ [AGENT_MSG] 봉투 → handleHarnessMessage() (사이클 상태 관리)
+  │   └─ 봇 @멘션 → 멘션된 봇 병렬 응답 (자기 멘션 제외, 연속 봇 턴 100회 한도)
+  └─ 유저 메시지
+      ├─ 협력 채널 → collaboration.handle() (멘션된 봇 순차 응답)
+      └─ 그 외 채널
+          ├─ !페르소나/!도움말 → 즉시 응답 (LLM 호출 없음)
+          ├─ !목표 <goal>     → 히스토리 추가 후 respond() (오케스트레이터 LLM이 팀 위임)
+          ├─ !자율 <goal>     → agent.startTaskGraph() (단독 자동 파이프라인)
+          └─ @멘션 + 일반 대화 → agent.respond()
 ```
 
-멘션에 `@툴봇`이 포함되어 있으면 해당 MCP 서버 툴을 활성화합니다. 아무 멘션도 없으면 `claude_code` 툴만 사용하는 순수 대화 모드로 동작합니다.
+## 6. [AGENT_MSG] 봉투 프로토콜 (`agentProtocol.ts`)
 
-## 재시작 복구
-
-봇이 재시작되면 `data/tasks/`의 JSON 파일을 읽어 `status: 'running'`인 그래프를 자동으로 재개합니다.
-
-- `resetForResume()`: running 상태였던 태스크를 pending으로 초기화 (중간에 끊긴 Claude Code 세션은 복구 불가이므로 처음부터 재실행)
-- `/task retry`: 사용자가 수동으로 실패한 그래프를 다시 running 상태로 만들고, 봇 재시작 시 자동 재개
-
-## GitHub 연동
-
-`config.json` 에이전트 설정에 `githubRepo: "owner/repo"`를 지정하면 활성화됩니다.
+봇 간 통신은 Discord 메시지에 다음 봉투 형식으로 이루어집니다:
 
 ```
-developerNode 실행 시:
-  1. git checkout -b feature/{taskId}-{taskTitle}
-  2. 코드 작성 및 커밋
-  3. git push origin <branch>
-  4. gh pr create --title "..." --body "..."
+[AGENT_MSG]
+cycleId: <uuid>
+turn: <integer>
+from: <botId>
+to: <botId | "SYSTEM_USER">
+type: TASK_ASSIGN | TASK_RESULT | CONFIRM_REQUEST | CONFIRM_RESPONSE | ESCALATE
+goalId: <string>
 
-testerNode 실행 시:
-  5. 테스트 스크립트 실행
-  6. gh pr checks (CI 상태 폴링)
+<body>
 ```
 
-요구사항: `gh` CLI 설치 및 `gh auth login` 완료, 봇 git 계정 설정 (`git config user.name`, `user.email`).
+- `router.ts`가 `[AGENT_MSG]`로 시작하는 봇 메시지를 감지 → `handleHarnessMessage()`로 라우팅
+- `CycleState`로 turn 한도 / rate-limit / 루프 감지 제어
+- 기본값: `maxTurns=12`, `maxBotMsgs/min=20`, 루프 감지 임계=3회
 
-## 데이터 영속성
+## 7. 역할 컨텍스트 3단계 로딩 (`roleContext.ts`)
 
-인메모리 상태와 파일 기반 영속성을 혼합합니다.
+System prompt에 역할 내용 주입 시 다음 순서로 누적합니다:
+
+```
+Step 1 │ ROLE 카테고리 채널 (role/developer 등)
+       │ 모든 프로젝트에 공통 적용되는 글로벌 역할 정의
+       │ → /role init 으로 생성, /role reset 으로 초기화
+       │
+Step 2 │ 현재 채널의 카테고리 안 "role" 채널 (프로젝트A/role)
+       │ 이 프로젝트(카테고리)에만 적용되는 커스텀 지침
+       │ → 직접 핀 작성, 또는 회고를 통해 자동 제안
+       │
+Step 3 │ 현재 채널의 봇 멘션 핀 (<@봇ID> 형식)
+       │ 이 채널에만 적용되는 개별 설정
+       │ → /channel setup 으로 관리
+```
+
+## 8. Task 실행 방식
+
+### !목표 — LLM 위임 방식
+오케스트레이터 봇이 Role 핀에 따라 팀에 `[AGENT_MSG]`로 위임합니다:
+```
+오케스트레이터 → planner(분해) → developer(구현) → reviewer(리뷰) → tester(검증)
+```
+각 봇이 자신의 역할 핀 지침에 따라 자율 처리합니다.
+
+### !자율 — 단독 자동 파이프라인
+단일 에이전트가 전체 파이프라인을 직접 실행합니다:
+
+1. LLM이 목표를 Task 배열로 분해 (`planner.ts`)
+2. 각 Task가 Agent Workflow 파이프라인으로 실행:
+   ```
+   plannerNode → developerNode → reviewerNode → testerNode
+   ```
+   - **plannerNode**: LLM이 구현 계획 작성
+   - **developerNode**: Claude Code로 코드 작성 (sessionKey=`${graphId}:${taskId}`)
+     - `githubRepo` 설정 시: 브랜치 생성 → 커밋 → 푸시 → PR 생성
+   - **reviewerNode**: LLM이 APPROVED/REVISION_NEEDED 판정 (최대 `maxReviewRetries`회 루프)
+   - **testerNode**: Claude Code로 테스트 실행 (같은 세션 resume)
+     - `githubRepo` 설정 시: `gh pr checks`로 CI 상태 확인
+3. 완료 후 `retrospective.ts`에서 이슈 분석 → 역할 핀 개선 제안 생성
+   - `[ROLE_UPDATE_PROPOSAL]` 메시지를 채널에 전송
+   - 유저가 ✅ 반응 → 적용, ❌ 반응 → 폐기
+
+## 9. LLM 클라이언트 (`llm.ts`)
+
+| 클라이언트 | 설명 |
+|---|---|
+| `AnthropicClient` | 네이티브 Anthropic SDK, prompt-caching-2024-07-31 beta 사용. Computer Use 툴 포함 시 beta 자동 추가 |
+| `OpenAICompatClient` | OpenAI SDK + baseUrl 스왑으로 Gemini/MiniMax 등 지원. Computer Use Beta 툴 자동 필터링 |
+| `UnconfiguredLLMClient` | apiKey/model 미설정 시 호출마다 오류 반환하는 더미 |
+
+시스템 프롬프트 + 툴 목록 마지막 항목에 `cache_control: ephemeral` 자동 마킹 (프롬프트 캐싱).
+
+## 10. 데이터 영속성
 
 | 데이터 | 저장 위치 | 비고 |
 |---|---|---|
 | 대화 히스토리 | 인메모리 (`history.ts`) | 재시작 시 Discord API에서 재로드 |
 | Task Graph | `data/tasks/{id}.json` | 상태 변경마다 동기 저장 |
 | 에이전트 설정 | `data/config.json` | `/github set` 등 커맨드로 런타임 수정 가능 |
-| 페르소나 | `data/personas/*.md` | `update_persona` 툴로 수정 |
+| 페르소나 | `data/personas/{channelId}.md` | `update_persona` 툴로 수정 |
+| 역할 핀 제안 | `data/proposals/{id}.json` | TTL 24h, 리액션 컨펌 방식 |
 | Claude Code 세션 | 인메모리 (`claude-code.ts`) | 재시작 시 초기화 |
+
+## 11. MCP 서버 관리 (`mcp.ts`)
+
+- Claude Desktop `claude_desktop_config.json`에서 MCP 서버 목록 읽기
+- `AgentConfig.mcpTokens` 값을 서버 프로세스 환경변수에 주입
+- 봇마다 서로 다른 계정 토큰으로 Notion/Gmail 등 독립 접근 가능
+
+> 슬래시 커맨드 전체 가이드: [COMMANDS.md](./COMMANDS.md)

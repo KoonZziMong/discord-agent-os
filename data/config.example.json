@@ -1,0 +1,37 @@
+{
+  "guildId": "YOUR_DISCORD_SERVER_ID",
+  "collabChannel": "COLLABORATION_CHANNEL_ID",
+  "adminPort": 3000,
+  "historyLimit": 50,
+  "maxTurnsPerCycle": 12,
+  "maxCycleMinutes": 30,
+  "maxReviewRetries": 2,
+  "autonomousRoleUpdates": false,
+  "toolBots": {},
+  "githubRepos": [],
+  "channelLimits": {},
+  "commands": {
+    "persona": ["!페르소나", "!persona"],
+    "help": ["!도움말", "!help"],
+    "task": ["!목표", "!task"],
+    "autonomous": ["!자율", "!pipeline"]
+  },
+  "agents": [
+    {
+      "id": "BOT_DISCORD_USER_ID",
+      "name": "찌몽",
+      "role": "developer",
+      "discordToken": "BOT_DISCORD_TOKEN",
+      "personaFile": "/absolute/path/to/data/personas/CHANNEL_ID.md",
+      "provider": "anthropic",
+      "apiKey": "sk-ant-...",
+      "model": "claude-opus-4-6",
+      "mcpTokens": {},
+      "computerUse": false,
+      "githubRepo": "owner/repo-name"
+    }
+  ],
+  "cmdBot": {
+    "discordToken": "CMDBOT_DISCORD_TOKEN"
+  }
+}
