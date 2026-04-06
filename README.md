@@ -1,77 +1,57 @@
-# discord-agent-os
+<div align="center">
 
-Discord를 운영 인터페이스로 삼는 자율 AI 개발팀 플랫폼입니다.
+# 🤖 DiscordAgentOS
 
-자연어로 목표를 입력하면 AI 에이전트가 계획을 수립하고, 코드를 작성하고, 리뷰하고, 테스트한 뒤 GitHub PR까지 올립니다. Discord 채널이 곧 작업 공간이자 실시간 대시보드입니다.
+**Discord 위에서 동작하는 AI 에이전트 오케스트레이션 시스템**
 
----
+*Planner → Developer → Reviewer → Tester 파이프라인을 Discord 채널에서 실행*
 
-## 핵심 개념
+<br/>
 
-### Discord-first 운영
+![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=node.js&logoColor=white)
+![Discord.js](https://img.shields.io/badge/Discord.js-v14-5865F2?style=flat-square&logo=discord&logoColor=white)
+![Version](https://img.shields.io/badge/version-1.0.0-blue?style=flat-square)
+![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
 
-모든 상호작용은 Discord에서 이루어집니다. 별도의 웹 UI나 CLI 없이 채팅만으로 AI 팀을 지휘합니다.
-
-- **개별 채널**: 각 AI 에이전트(찌몽·아루·센세)는 전용 채널을 가집니다
-- **협력 채널**: 에이전트들이 함께 논의하는 공용 채널
-- **슬래시 커맨드**: CmdBot이 작업 관리·GitHub 연동·상태 조회 등 운영 커맨드를 전담
-
-### 목표 기반 실행 (`!목표`)
-
-```
-!목표 사용자 인증 API를 JWT 방식으로 구현해줘
-```
-
-에이전트가 목표를 받아 Task Graph로 분해하고, 각 태스크를 **Planner → Developer → Reviewer → Tester** 파이프라인으로 자동 실행합니다. 병렬로 실행 가능한 태스크는 동시에 처리되며, Discord에 실시간 진행 상황이 표시됩니다.
-
-### GitHub 워크플로우
-
-에이전트에 `githubRepo`를 연결하면 코드 작성 후 자동으로 브랜치를 만들고 PR을 올립니다. CI 결과도 확인합니다.
+</div>
 
 ---
 
-## 슬래시 커맨드
+## ✨ Features
 
-모든 커맨드는 관리자 전용이며 본인에게만 표시됩니다(ephemeral).
-
-### `/task`
-
-Task Graph 실행 현황을 조회하고 제어합니다.
-
-| 서브커맨드 | 설명 |
-|---|---|
-| `list` | 최근 태스크 그래프 목록 (최대 10개) |
-| `detail` | 드롭다운으로 그래프를 선택해 태스크별 상세 결과 확인 |
-| `cancel <id>` | 실행 중인 그래프 강제 종료 |
-| `retry <id>` | 실패한 그래프 재시도 (봇 재시작 후 자동 재개) |
-
-### `/github`
-
-에이전트별 연결 GitHub 레포를 관리합니다.
-
-| 서브커맨드 | 설명 |
-|---|---|
-| `add <owner/repo>` | 글로벌 레포 목록에 추가 |
-| `set` | 드롭다운으로 현재 채널 에이전트의 레포 선택 |
-| `list` | 등록된 레포 목록 및 에이전트별 현재 설정 조회 |
-| `remove` | 드롭다운으로 레포 삭제 |
-
-### `/status`
-
-봇 프로세스 상태를 확인합니다 (업타임, 핑, 메모리, Node.js 버전).
+- 🧠 **역할 기반 AI 에이전트** — Planner / Developer / Reviewer / Tester / Researcher
+- 🔗 **TaskGraph 기반 자동 파이프라인** — 목표 하나로 전체 개발 사이클 자동 실행
+- 💬 **Discord-first 운영** — 채널이 곧 작업 공간이자 실시간 대시보드
+- 🌐 **관리 웹 UI** — Express 기반 상태 모니터링
+- 📌 **역할 핀 메시지** — 컨텍스트 동적 주입으로 일관된 페르소나 유지
+- 🔀 **병렬 태스크 실행** — 의존성 없는 태스크는 동시 처리
 
 ---
 
-## 시작하기
+## 📸 Demo
 
-### 요구사항
+> 🚧 스크린샷 준비 중입니다. 실제 사용 화면은 추후 업데이트됩니다.
 
-- Node.js 20+
-- Discord 봇 계정 × 4 (AI 봇 3 + CmdBot 1)
-- Anthropic API 키
-- `gh` CLI (GitHub 워크플로우 사용 시)
+<!-- TODO: 데모 GIF 추가 후 아래 주석을 해제하세요 -->
+<!-- ![Demo](docs/assets/demo.gif) -->
 
-### 설치
+---
+
+## 🛠 Tech Stack
+
+![TypeScript](https://img.shields.io/badge/-TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![Node.js](https://img.shields.io/badge/-Node.js-339933?style=for-the-badge&logo=node.js&logoColor=white)
+![Discord.js](https://img.shields.io/badge/-Discord.js-5865F2?style=for-the-badge&logo=discord&logoColor=white)
+![Anthropic](https://img.shields.io/badge/-Anthropic%20Claude-D97757?style=for-the-badge)
+![Express](https://img.shields.io/badge/-Express-000000?style=for-the-badge&logo=express&logoColor=white)
+
+---
+
+## 🚀 Quick Start
+
+### 1. 설치
 
 ```bash
 git clone https://github.com/KoonZziMong/discord-agent-os.git
@@ -79,9 +59,14 @@ cd discord-agent-os
 npm install
 ```
 
-### 설정
+### 2. 환경 설정
 
-`data/config.json`을 작성합니다.
+```bash
+cp .env.example .env
+# .env 파일에서 DISCORD_TOKEN, ANTHROPIC_API_KEY 등 설정
+```
+
+`data/config.json`을 작성합니다:
 
 ```jsonc
 {
@@ -105,26 +90,50 @@ npm install
 }
 ```
 
-### 슬래시 커맨드 등록
+### 3. 슬래시 커맨드 등록
 
 ```bash
 node deploy-commands.js --guild YOUR_SERVER_ID
 ```
 
-### 실행
+### 4. 실행
 
 ```bash
-npm start
+npm run dev      # 개발 모드
+npm run build    # 빌드
+npm start        # 프로덕션
 ```
 
----
-
-## 문서
-
-- [아키텍처](docs/ARCHITECTURE.md) — 시스템 구조, 데이터 흐름, 주요 모듈 설명
+> 상세 설정 및 Discord 봇 생성 방법은 [📖 Getting Started](docs/getting-started.md) 참조
 
 ---
 
-## 라이선스
+## 📚 Documentation
 
-MIT
+| 문서 | 설명 |
+|---|---|
+| [🏗 Architecture](docs/ARCHITECTURE.md) | 시스템 구조, 모듈 맵, 파이프라인 흐름 |
+| [🚀 Getting Started](docs/getting-started.md) | 설치, 환경 설정, Discord 봇 생성, 첫 실행 |
+| [🔌 API Reference](docs/api.md) | AgentConfig, TaskGraph, 관리 웹 API 명세 |
+| [🛠 Development Guide](docs/development.md) | 코드 컨벤션, 브랜치 전략, 개발 명령어 |
+| [🤝 Contributing](docs/contributing.md) | 새 역할 추가법, PR 가이드, 로컬 테스트 체크리스트 |
+| [📋 Commands](docs/COMMANDS.md) | 슬래시 커맨드 전체 레퍼런스 |
+| [🤖 Claude AI Guide](docs/CLAUDE.md) | AI 에이전트 운용 가이드 |
+
+---
+
+## 🤝 Contributing
+
+기여는 언제나 환영입니다! 자세한 내용은 [CONTRIBUTING 가이드](docs/contributing.md)를 확인해주세요.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+MIT License — [LICENSE](LICENSE) 파일 참조
