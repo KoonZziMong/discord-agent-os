@@ -200,6 +200,7 @@ async function handleCreate(interaction) {
     }
 
     // 5. description → LLM이 role 채널 Step 2 지침 생성
+    //    Step 1 글로벌 역할 채널 내용을 먼저 읽어서 중복 없이 프로젝트 특화 내용만 추가
     if (description && roleChannel) {
       await interaction.editReply({
         content: `⏳ **${categoryName}** 생성 중...\n\`\`\`\n${log.join('\n')}\n\`\`\`\n🤖 LLM이 프로젝트 특화 지침 생성 중...`,
@@ -211,49 +212,92 @@ async function handleCreate(interaction) {
       } else {
         const agentList = loadAgentList();
 
-        // 봇 구성 요약 (defaultBotMap이 있으면 역할 매핑, 없으면 전체 봇 목록)
-        const botRoleSummary = Object.keys(defaultBotMap).length > 0
-          ? Object.entries(defaultBotMap).map(([roleName, botIds]) => {
-              const names = botIds.map((id) => {
-                const a = agentList.find((ag) => ag.id === id);
-                return a ? `${a.name}(<@${id}>)` : `<@${id}>`;
-              }).join(', ');
-              return `- ${roleName}: ${names}`;
-            }).join('\n')
-          : agentList.map((a) => `- ${a.name} (<@${a.id}>)`).join('\n') || '(봇 정보 없음)';
+        // Step 1 글로벌 역할 채널에서 각 역할의 핀 내용 로드 (중복 방지용)
+        const globalRoleCategory = guild.channels.cache.find(
+          (c) => c.type === ChannelType.GuildCategory && c.name.toLowerCase() === 'role',
+        );
+        const globalRoleContents = {}; // roleName → string
+        if (globalRoleCategory) {
+          await Promise.all(
+            Object.keys(defaultBotMap).map(async (roleName) => {
+              try {
+                const ch = guild.channels.cache.find(
+                  (c) => c.parentId === globalRoleCategory.id && c.name === roleName,
+                );
+                if (!ch) return;
+                const textCh = await guild.channels.fetch(ch.id);
+                const pins = await textCh.messages.fetchPinned();
+                const content = [...pins.values()]
+                  .reverse()
+                  .filter((m) => m.content.trim().length > 0)
+                  .filter((m) => !m.content.trimStart().match(/^<@!?\d+>\s*\ndefault:/))
+                  .filter((m) => !m.content.trimStart().match(/^<@!?\d+>/))
+                  .map((m) => m.content)
+                  .join('\n\n---\n\n');
+                if (content) globalRoleContents[roleName] = content;
+              } catch { /* 개별 채널 실패 무시 */ }
+            }),
+          );
+        }
+
+        // 역할별 항목 구성 (봇ID, 역할명, 글로벌 내용)
+        const roleEntries = Object.entries(defaultBotMap).flatMap(([roleName, botIds]) =>
+          botIds.map((botId) => ({
+            roleName,
+            botId,
+            botName: agentList.find((a) => a.id === botId)?.name ?? botId,
+            globalContent: globalRoleContents[roleName] ?? '(내용 없음)',
+          })),
+        );
+
+        // 역할별 섹션 — LLM이 기존 내용을 보고 중복 없이 추가할 내용 결정
+        const roleSection = roleEntries.map(({ roleName, botId, botName, globalContent }) => {
+          const preview = globalContent.slice(0, 600) + (globalContent.length > 600 ? '\n...(이하 생략)' : '');
+          return `### ${roleName} — ${botName} (ID: ${botId})
+이미 주입되는 글로벌 역할 내용 (중복 작성 금지):
+\`\`\`
+${preview}
+\`\`\``;
+        }).join('\n\n');
 
         const systemPrompt = `당신은 Discord AI 에이전트 팀의 프로젝트 설정 도우미입니다.
-프로젝트의 "role" 채널(Step 2 컨텍스트 채널)에 넣을 핀 내용을 생성합니다.
+프로젝트의 "role" 채널에 넣을 핀 내용을 생성합니다.
+이 핀들은 프로젝트 내 모든 채널에서 AI 봇의 system prompt에 글로벌 역할 정의 다음에 추가로 주입됩니다.
 
-## Step 2 채널의 역할
-이 채널의 핀 내용은 프로젝트 내 모든 채널에서 AI 봇의 system prompt에 자동 주입됩니다.
-글로벌 역할 정의(Step 1)에 추가되는 프로젝트 특화 지침입니다.
+## 핀 1개 = 봇 1명
+각 봇마다 핀 1개를 생성합니다. 형식은 반드시:
+첫 줄: <@봇ID>
+둘째 줄: 역할: {역할명}
+이후: 이 프로젝트에서 해당 역할에 필요한 특화 내용
 
-## 핀 작성 원칙
-- 공통 핀: 모든 봇에게 주입되는 프로젝트 전체 컨텍스트 (봇 멘션 없이 시작)
-- 봇 전용 핀: 특정 봇에게만 주입 (반드시 첫 줄 <@봇ID>로 시작, 아래 실제 ID 사용)
-- 마크다운 형식, 핀당 최대 2000자
-- 핵심만 간결하게 — 매 LLM 호출 시 system prompt에 포함되므로 토큰 비용에 직결됨
-- 권장 최대 총 분량: 1500자 이내
+## 절대 금지
+- 글로벌 역할 내용과 동일하거나 유사한 내용 작성 (이미 주입됨)
+- "역할: roleName" 외의 역할 배정 문법 사용
+- description과 무관한 일반적인 내용 작성
 
-## 프로젝트 봇 구성
-${botRoleSummary}
-
-## 작성 내용 가이드
-프로젝트 설명을 바탕으로 다음을 포함하세요:
-- 프로젝트 기술 스택, 주요 도메인, 코딩 컨벤션
-- 각 역할이 이 프로젝트에서 특히 주의해야 할 사항
-- 공통 규칙과 역할별 특화 지침을 구분하여 작성
+## 작성 기준
+description을 분석하여 각 역할이 이 프로젝트에서 특히 알아야 할 내용만 작성:
+- 기술 스택, 도메인, 컨벤션 중 해당 역할에 관련된 것
+- 글로벌 정의에 없는 이 프로젝트만의 규칙이나 제약
+- 각 봇 역할 특성에 맞게 다른 내용으로 작성 (복붙 금지)
+- 핀당 최대 800자, 전체 합산 1500자 이내
 
 반드시 아래 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
 {
   "pins": [
-    "공통 핀 내용...",
-    "<@봇ID>\\n봇 전용 핀 내용..."
+    "<@봇ID>\\n역할: roleName\\n프로젝트 특화 내용...",
+    "<@봇ID>\\n역할: roleName\\n프로젝트 특화 내용..."
   ]
 }`;
 
-        const userMessage = `## 프로젝트명\n${projectName}\n\n## 프로젝트 설명\n${description}`;
+        const userMessage = `## 프로젝트명
+${projectName}
+
+## 프로젝트 설명
+${description}
+
+## 봇별 글로벌 역할 내용 (이미 주입됨 — 중복 금지)
+${roleSection || '(글로벌 역할 내용 없음 — description 기반으로 자유롭게 작성)'}`;
 
         try {
           console.log(`[/project create] LLM 호출 시작 (${cmdCfg.model})`);
