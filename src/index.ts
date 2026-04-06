@@ -21,7 +21,7 @@ import { Agent } from './agent';
 import { createRouter } from './router';
 import { loadFromDiscord } from './history';
 import { loadChannelContext, updateTopic, refreshPins } from './channelContext';
-import { invalidateRoleCache, parseAgentRole } from './roleContext';
+import { invalidateRoleCache, invalidateRoleChannelIdCache, parseAgentRole, getRoleChannelId } from './roleContext';
 import { TaskGraph } from './task/graph';
 import { loadIncompleteGraphs } from './task/store';
 import { startAdminServer } from './admin/server';
@@ -237,7 +237,11 @@ async function main(): Promise<void> {
             } catch { /* 개별 채널 로드 실패는 무시 */ }
           }),
         );
-        console.log(`📌 역할 채널 ${roleChannels.size}개 핀 로드 완료`);
+        // 역할명 → channelId 캐시 워밍업 (getRoleChannelId 첫 호출 시 자동 캐싱)
+        for (const ch of roleChannels.values()) {
+          getRoleChannelId(guild, ch.name);
+        }
+        console.log(`📌 역할 채널 ${roleChannels.size}개 핀 로드 + 역할ID 캐시 완료`);
       }
     }
   } catch (err: unknown) {

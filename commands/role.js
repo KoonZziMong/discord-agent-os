@@ -26,6 +26,12 @@ function loadCollabChannel() {
   }
 }
 
+// config.json에서 CmdBot ID 로드 (디폴트 핀 작성용)
+function loadCmdBotId(interaction) {
+  // CmdBot은 커맨드를 실행한 봇 자신
+  return interaction.client.user.id;
+}
+
 // ── 역할 채널 정의 ─────────────────────────────────────────────
 
 const DEFAULT_ROLES = [
@@ -334,6 +340,23 @@ module.exports = {
       sub
         .setName('reset')
         .setDescription('역할 채널 핀을 코드의 최신 기본값으로 교체 (기존 메시지는 히스토리로 보존)'),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('set-default')
+        .setDescription('역할 채널에 디폴트 봇을 지정합니다')
+        .addStringOption((opt) =>
+          opt
+            .setName('role')
+            .setDescription('역할명 (orchestrator/planner/developer/reviewer/tester/researcher)')
+            .setRequired(true),
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName('bots')
+            .setDescription('디폴트 봇 멘션 (예: @찌몽 또는 @꼼꼼이 @꼼꼼이2)')
+            .setRequired(true),
+        ),
     ),
 
   async execute(interaction) {
@@ -346,6 +369,8 @@ module.exports = {
       await handleInit(interaction);
     } else if (sub === 'reset') {
       await handleReset(interaction);
+    } else if (sub === 'set-default') {
+      await handleSetDefault(interaction);
     }
   },
 };
@@ -392,8 +417,16 @@ async function handleInit(interaction) {
         topic: role.description,
       });
 
+      // 역할 내용 핀
       const msg = await channel.send(role.content);
       await msg.pin();
+
+      // CmdBot 디폴트 봇 핀 (미설정 상태로 초기화)
+      const cmdBotId = loadCmdBotId(interaction);
+      const defaultPin = await channel.send(
+        `<@${cmdBotId}>\ndefault: (미설정 — /role set-default role:${role.name} bots:@봇멘션 으로 지정하세요)`,
+      );
+      await defaultPin.pin();
 
       log.push(`  📄 #${role.name} — 생성 완료 (ID: ${channel.id})`);
     }
@@ -480,6 +513,64 @@ async function handleReset(interaction) {
     });
   } catch (err) {
     console.error('[/role reset] 오류:', err);
+    await interaction.editReply({ content: `❌ 오류: ${err.message}` });
+  }
+}
+
+// ── /role set-default ─────────────────────────────────────────
+
+async function handleSetDefault(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const guild = interaction.guild;
+  const roleName = interaction.options.getString('role');
+  const botsInput = interaction.options.getString('bots');
+
+  try {
+    // '역할' 카테고리에서 해당 역할 채널 찾기
+    const category = guild.channels.cache.find(
+      (c) => c.type === ChannelType.GuildCategory && c.name === '역할',
+    );
+    if (!category) {
+      return interaction.editReply({ content: '❌ 역할 카테고리가 없습니다. 먼저 `/role init`을 실행하세요.' });
+    }
+
+    const roleChannel = guild.channels.cache.find(
+      (c) => c.parentId === category.id && c.name === roleName,
+    );
+    if (!roleChannel) {
+      return interaction.editReply({ content: `❌ \`${roleName}\` 역할 채널을 찾을 수 없습니다.` });
+    }
+
+    const textChannel = await guild.channels.fetch(roleChannel.id);
+    const cmdBotId = loadCmdBotId(interaction);
+
+    // 기존 CmdBot 디폴트 핀 찾기
+    const pinned = await textChannel.messages.fetchPinned();
+    const existingDefaultPin = [...pinned.values()].find((m) =>
+      m.content.trimStart().startsWith(`<@${cmdBotId}>`) && m.content.includes('default:'),
+    );
+
+    // 새 디폴트 핀 내용
+    const newContent = `<@${cmdBotId}>\ndefault: ${botsInput}`;
+
+    // 기존 핀 언핀 후 새 핀 등록 (히스토리 보존)
+    if (existingDefaultPin) {
+      await existingDefaultPin.unpin().catch(() => {});
+    }
+    const newMsg = await textChannel.send(newContent);
+    await newMsg.pin();
+
+    // 멘션된 봇 이름 추출 (표시용)
+    const botMentions = [...botsInput.matchAll(/<@!?(\d+)>/g)]
+      .map((m) => `<@${m[1]}>`)
+      .join(', ');
+
+    await interaction.editReply({
+      content: `✅ \`${roleName}\` 역할 디폴트 봇 설정 완료\n봇: ${botMentions || botsInput}`,
+    });
+  } catch (err) {
+    console.error('[/role set-default] 오류:', err);
     await interaction.editReply({ content: `❌ 오류: ${err.message}` });
   }
 }

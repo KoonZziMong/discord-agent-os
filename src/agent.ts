@@ -292,10 +292,19 @@ export class Agent {
       ? buildContextBlock(getChannelContext(channelId), this.id)
       : '';
 
-    // 역할 채널 컨텍스트 (봇 전용 핀에 "역할채널: {id}" 있을 때만)
+    // 역할 채널 컨텍스트
+    // - 채널 핀에 역할 설정 있으면 해당 역할 채널 내용 주입 (여러 역할이면 모두 누적)
+    // - 채널 핀에 역할 설정 없으면 config.role 디폴트 역할 채널 내용 폴백
     let roleBlock = '';
     if (channelId) {
-      const roleContent = await getRoleContent(this.botClient, this.id, channelId);
+      const guild = this.botClient.guilds.cache.first() ?? null;
+      const roleContent = await getRoleContent(
+        this.botClient,
+        this.id,
+        channelId,
+        this.config.role,
+        guild ?? undefined,
+      );
       if (roleContent) {
         roleBlock = '\n\n---\n## 나의 역할\n' + roleContent;
       }

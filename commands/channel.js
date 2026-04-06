@@ -136,8 +136,9 @@ async function handleSetup(interaction) {
     // 에이전트 목록 로드 (봇 멘션 생성 시 정확한 ID 제공용)
     const agentList = loadAgentList();
 
-    // '역할' 카테고리 채널 목록 조회 (역할 지정 시 오타 방지용)
+    // '역할' 카테고리 채널 목록 + 디폴트 봇 정보 조회
     const guild = interaction.guild;
+    const cmdBotId = interaction.client.user.id;
     const roleCategory = guild?.channels.cache.find(
       (c) => c.type === 4 /* GuildCategory */ && c.name === '역할',
     );
@@ -146,6 +147,32 @@ async function handleSetup(interaction) {
           .filter((c) => c.parentId === roleCategory.id && c.type === 0)
           .map((c) => c.name)
       : [];
+
+    // 역할별 디폴트 봇 목록 조회 (역할 채널의 CmdBot 핀에서 파싱)
+    const defaultBotMap = {};
+    if (roleCategory) {
+      const roleChannels = guild.channels.cache.filter(
+        (c) => c.parentId === roleCategory.id && c.type === 0,
+      );
+      await Promise.all([...roleChannels.values()].map(async (ch) => {
+        try {
+          const textCh = await guild.channels.fetch(ch.id);
+          const pins = await textCh.messages.fetchPinned();
+          for (const msg of pins.values()) {
+            if (msg.content.trimStart().startsWith(`<@${cmdBotId}>`) && msg.content.includes('default:')) {
+              const mentionMatches = [...msg.content.matchAll(/<@!?(\d+)>/g)].slice(1); // CmdBot 제외
+              const botIds = mentionMatches.map((m) => m[1]);
+              const botNames = botIds.map((id) => {
+                const agent = agentList.find((a) => a.id === id);
+                return agent ? `${agent.name}(<@${id}>)` : `<@${id}>`;
+              });
+              if (botNames.length > 0) defaultBotMap[ch.name] = botNames.join(', ');
+              break;
+            }
+          }
+        } catch { /* 개별 채널 실패는 무시 */ }
+      }));
+    }
 
     // 현재 핀 메시지만 미리 로드 (토픽은 channel.topic으로 바로 접근)
     const pinnedMsgs = await channel.messages.fetchPinned();
@@ -231,9 +258,15 @@ ${agentList.length > 0
 
 ${availableRoles.length > 0
   ? `현재 등록된 역할 (정확히 이 이름 중 하나만 사용):
-${availableRoles.map((r) => `- ${r}`).join('\n')}
+${availableRoles.map((r) => {
+    const def = defaultBotMap[r];
+    return `- ${r}${def ? ` (디폴트 봇: ${def})` : ''}`;
+  }).join('\n')}
 
-사용자가 역할 이름에 오타를 내거나 다른 표현을 써도 위 목록에서 가장 가까운 역할명으로 교정하여 사용하세요.`
+사용자가 역할 이름에 오타를 내거나 다른 표현을 써도 위 목록에서 가장 가까운 역할명으로 교정하여 사용하세요.
+
+"디폴트 봇으로 설정해줘" 또는 "기본 봇으로 매핑해줘" 지시 시:
+위 디폴트 봇 정보를 참고하여 각 봇의 전용 핀에 '역할: {역할명}'을 자동으로 작성하세요.`
   : '(역할 채널 없음 — /role init을 먼저 실행하세요)'
 }
 
