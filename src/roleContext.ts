@@ -6,7 +6,11 @@
  *
  * 채널에 역할 설정이 없으면 역할 채널의 디폴트 봇 설정을 폴백으로 사용합니다.
  *
- * ## 역할 컨텍스트 3단계 로딩
+ * ## 역할 컨텍스트 로딩 순서 (Step 0 ~ 3)
+ *
+ * Step 0 — ROLE 카테고리의 'rule' 채널 (팀 공통 규약)
+ *   역할·채널 관계없이 모든 에이전트에 항상 주입합니다.
+ *   약한/강한 결합 인터페이스, 에스컬레이션 규칙 등 팀 전체 규약 정의.
  *
  * Step 1 — ROLE 카테고리 채널 (role/developer 등)
  *   모든 프로젝트에 공통 적용되는 글로벌 역할 정의.
@@ -223,7 +227,8 @@ export async function getDefaultBotsForRole(
 /**
  * 지정된 채널의 컨텍스트에서 봇 전용 핀을 찾아 역할 내용을 반환합니다.
  *
- * ## 3단계 로딩 순서
+ * ## 로딩 순서
+ *   Step 0: ROLE 카테고리 'rule' 채널 (팀 공통 규약 — 항상 주입)
  *   Step 1: ROLE 카테고리 채널 (글로벌 역할 정의)
  *   Step 2: 현재 채널의 카테고리 안 "role" 채널 (프로젝트 커스텀 지침)
  *   Step 3: 현재 채널의 봇 멘션 핀 (채널 개별 설정)
@@ -241,6 +246,14 @@ export async function getRoleContent(
   defaultRole?: string,
   guild?: Guild,
 ): Promise<string> {
+  // Step 0: 모든 에이전트에 공통 적용되는 공유 규칙 ('rule' 채널)
+  // 역할·채널에 관계없이 항상 주입합니다.
+  const step0Parts: string[] = [];
+  if (guild) {
+    const ruleContent = await fetchRoleContentByName(client, guild, 'rule');
+    if (ruleContent) step0Parts.push(`## 팀 공통 규칙\n${ruleContent}`);
+  }
+
   const ctx = getChannelContext(channelId);
 
   // 이 봇 전용 핀 찾기 (<@botId> 또는 <@!botId> 로 시작)
@@ -263,15 +276,17 @@ export async function getRoleContent(
 
   // 케이스 1: 채널에 역할 설정 없음 → 디폴트 역할 폴백 (step 2도 함께 로드)
   if (channelRoles.length === 0) {
-    if (!defaultRole || !guild) return '';
+    if (!defaultRole || !guild) {
+      return step0Parts.join('\n\n---\n\n');
+    }
     const step1 = await fetchRoleContentByName(client, guild, defaultRole);
     const step2 = await fetchCategoryRoleContent(client, guild, channelId, botId);
-    if (!step2) return step1;
-    return [step1, `## 프로젝트 커스텀 지시\n${step2}`].filter(Boolean).join('\n\n---\n\n');
+    const bodyParts = [step1, step2 ? `## 프로젝트 커스텀 지시\n${step2}` : ''].filter(Boolean);
+    return [...step0Parts, ...bodyParts].filter(Boolean).join('\n\n---\n\n');
   }
 
   // 케이스 2~4: 채널에 역할 설정 있음 — Step 1 로드
-  const sections: string[] = [];
+  const sections: string[] = [...step0Parts];
 
   for (const roleName of channelRoles) {
     // 역할 채널 ID 직접 참조가 있으면 우선 사용, 없으면 역할명으로 탐색
