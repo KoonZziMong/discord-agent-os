@@ -727,16 +727,18 @@ function openBotPanel(agentId) {
         </div>
         <div class="form-group">
           <label>모델</label>
-          <input id="f-model" value="${esc(agent.model)}" list="f-model-list" autocomplete="off">
-          <datalist id="f-model-list"></datalist>
+          <select id="f-model"></select>
         </div>
         <div class="form-group">
           <label>API 키</label>
           <input id="f-apikey" value="${esc(agent.apiKey)}" type="password">
         </div>
         <div class="form-group">
-          <label>Base URL <span style="color:var(--text-muted)">(자동 설정되지 않는 경우만 입력)</span></label>
-          <input id="f-baseurl" value="${esc(agent.baseUrl ?? '')}">
+          <label>Base URL <span style="color:var(--text-muted)">(비워두면 provider 기본값 사용)</span></label>
+          <div style="display:flex;gap:6px">
+            <input id="f-baseurl" value="${esc(agent.baseUrl ?? '')}" style="flex:1">
+            <button class="btn-ghost" type="button" onclick="resetBaseUrl()" style="white-space:nowrap;width:auto;padding:7px 12px">기본값</button>
+          </div>
         </div>
       </div>
 
@@ -792,6 +794,8 @@ function openBotPanel(agentId) {
        <button class="btn-ghost" onclick="closePanel()">취소</button>
        <button class="btn-primary" onclick="saveBotPanel('${agentId}')">💾 저장</button>`
     );
+    // 패널 렌더 후 모델 드롭다운 초기화
+    updateModelHint(agent.model);
   });
 }
 
@@ -1249,21 +1253,28 @@ const PROVIDER_DEFAULTS = {
   },
 };
 
-function updateModelHint() {
+function updateModelHint(currentModel) {
   const provider = val('f-provider');
   const defaults = PROVIDER_DEFAULTS[provider] ?? { models: [], baseUrl: '' };
 
-  // datalist 업데이트
-  const dl = document.getElementById('f-model-list');
-  if (dl) {
-    dl.innerHTML = defaults.models.map(m => `<option value="${m}">`).join('');
+  // 모델 select 채우기
+  const sel = document.getElementById('f-model');
+  if (sel) {
+    const current = currentModel ?? sel.value;
+    const models = [...defaults.models];
+    // 현재 값이 목록에 없으면 직접 입력한 값으로 맨 앞에 추가
+    if (current && !models.includes(current)) models.unshift(current);
+    sel.innerHTML = models.map(m =>
+      `<option value="${m}"${m === current ? ' selected' : ''}>${m}</option>`
+    ).join('');
   }
+}
 
-  // baseUrl 자동 채움 — 이미 값이 있으면 덮어쓰지 않음
+function resetBaseUrl() {
+  const provider = val('f-provider');
+  const defaults = PROVIDER_DEFAULTS[provider] ?? { baseUrl: '' };
   const buEl = document.getElementById('f-baseurl');
-  if (buEl && !buEl.value && defaults.baseUrl) {
-    buEl.value = defaults.baseUrl;
-  }
+  if (buEl) buEl.value = defaults.baseUrl;
 }
 
 // ── Utilities ─────────────────────────────────────────────────
