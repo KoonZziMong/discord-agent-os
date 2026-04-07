@@ -46,9 +46,10 @@ export async function planTasks(goal: string, llm: LLMClient): Promise<TaskInput
 
   // 응답에서 JSON 배열 추출 — [{ 로 시작하는 객체 배열만 매칭
   // (코드블록 wrapping, 목표 텍스트의 [ 오매칭 모두 방지)
+  console.log(`[planner] LLM 응답 전체:\n${text}`);
   const match = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
   if (!match) {
-    throw new Error(`플래너 응답에서 JSON을 찾을 수 없음:\n${text.slice(0, 300)}`);
+    throw new Error(`플래너 응답에서 JSON을 찾을 수 없음:\n${text.slice(0, 500)}`);
   }
 
   const raw = JSON.parse(match[0]) as Array<{
