@@ -32,8 +32,6 @@ export interface AgentConfig {
   // false로 설정하면 LLM 텍스트 응답으로 대체됩니다.
   useClaudeCode?: boolean;
 
-  // 이 채널(프로젝트)에 연결된 GitHub 레포 (owner/repo 형식, 미설정 시 GitHub 워크플로우 비활성화)
-  githubRepo?: string;
 }
 
 export interface CmdBotConfig {
@@ -76,9 +74,6 @@ export interface AppConfig {
   historyLimit: number;
   // 채널별 히스토리 개수 오버라이드 { channelId: limit }
   channelLimits: Record<string, number>;
-  // 글로벌 GitHub 레포 목록 ["owner/repo", ...]
-  // /github add 커맨드로 관리, /github set으로 채널별 기본 레포 지정
-  githubRepos: string[];
   /** 채팅 명령어 prefix 설정 */
   commands: CommandsConfig;
   /** Agent Workflow 리뷰 최대 재시도 횟수 (기본값: 2) */
@@ -148,7 +143,6 @@ export function loadConfig(): AppConfig {
     toolBots: raw.toolBots ?? {},
     historyLimit: raw.historyLimit ?? 20,
     channelLimits: raw.channelLimits ?? {},
-    githubRepos: raw.githubRepos ?? [],
     commands: {
       help:       raw.commands?.help       ?? ['!도움말', '!help'],
       task:       raw.commands?.task       ?? ['!목표', '!task'],

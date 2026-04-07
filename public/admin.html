@@ -416,11 +416,8 @@ function renderBots() {
       <div class="bot-card-meta">
         ${configured
           ? `<div>${esc(cfg.provider || '?')} / <span class="model">${shortModel(cfg.model)}</span></div>
-             ${cfg.chatChannel ? `<div>${channelName(cfg.chatChannel)}</div>` : '<div style="color:var(--text-muted)">채널 미설정</div>'}
-             ${cfg.githubRepo ? `<div style="color:var(--accent)">${esc(cfg.githubRepo)}</div>` : ''}
              ${!cfg.discordToken ? `<div style="color:#f0b429;font-size:11px">ⓘ Discord 토큰 없음 — 로그인 불가</div>` : ''}
-             ${!cfg.apiKey ? `<div style="color:#f0b429;font-size:11px">ⓘ API 키 없음 — LLM 연동 불가</div>` : ''}
-             ${!cfg.chatChannel ? `<div style="color:#f0b429;font-size:11px">ⓘ 채팅 채널 없음 — 메시지 수신 불가</div>` : ''}`
+             ${!cfg.apiKey ? `<div style="color:#f0b429;font-size:11px">ⓘ API 키 없음 — LLM 연동 불가</div>` : ''}`
           : `<div style="color:var(--text-muted);font-size:11px">클릭해서 설정</div>`
         }
       </div>`;
@@ -718,10 +715,6 @@ function openBotPanel(agentId) {
 
       <div class="form-section">
         <div class="form-section-title">기타 ${hotBadge()}</div>
-        <div class="form-group">
-          <label>GitHub 레포 <span style="color:var(--text-muted)">(owner/repo)</span></label>
-          <input id="f-github" value="${esc(agent.githubRepo ?? '')}">
-        </div>
         <div class="toggle-row">
           <label style="margin:0">Computer Use</label>
           <label class="toggle">
@@ -774,7 +767,6 @@ async function saveBotPanel(agentId) {
       model: val('f-model'),
       apiKey: val('f-apikey'),
       baseUrl: val('f-baseurl') || undefined,
-      githubRepo: val('f-github') || undefined,
       computerUse: document.getElementById('f-computer').checked,
       useClaudeCode: document.getElementById('f-use-claude-code').checked,
       mcpTokens: collectKvList('mcp-list'),

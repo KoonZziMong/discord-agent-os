@@ -258,7 +258,6 @@ export class Agent {
       this.name,
       await this.buildSystemPrompt(channelId),
       runClaudeCode,
-      this.config.githubRepo,
       this.appCfg.maxReviewRetries,
     );
 

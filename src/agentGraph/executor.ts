@@ -34,7 +34,6 @@ export async function executeWorkflow(
   agentName: string,
   agentSystemPrompt: string,
   runCode: (input: ClaudeCodeInput) => Promise<ClaudeCodeResult>,
-  githubRepo?: string,
   maxReviewRetries = 2,
 ): Promise<WorkflowResult> {
   const ctx: WorkflowContext = {
@@ -44,7 +43,6 @@ export async function executeWorkflow(
     llm,
     agentName,
     agentSystemPrompt,
-    githubRepo,
     runCode,
   };
 

@@ -16,8 +16,6 @@ export interface WorkflowContext {
   llm: LLMClient;
   agentName: string;
   agentSystemPrompt: string;
-  /** 연결된 GitHub 레포 (owner/repo). 설정 시 git 워크플로우(브랜치→커밋→PR) 활성화 */
-  githubRepo?: string;
   runCode: (input: ClaudeCodeInput) => Promise<ClaudeCodeResult>;
 }
 

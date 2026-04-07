@@ -8,20 +8,8 @@
 import type { WorkflowContext } from '../types';
 
 export async function testerNode(ctx: WorkflowContext, devResult: string): Promise<string> {
-  const { task, graphId, channelId, githubRepo, runCode } = ctx;
+  const { task, graphId, channelId, runCode } = ctx;
   const sessionKey = `${graphId}:${task.id}`;
-
-  const ciInstructions = githubRepo
-    ? [
-        ``,
-        `## CI 확인 (GitHub Actions)`,
-        `레포: ${githubRepo}`,
-        `테스트 실행 후 다음을 확인하세요:`,
-        `1. \`gh pr checks\` — PR의 CI 상태 확인`,
-        `2. CI가 실패했다면 실패 원인을 파악하고 보고하세요.`,
-        `3. CI가 아직 실행 중이라면 상태만 보고하세요.`,
-      ].join('\n')
-    : '';
 
   const prompt = [
     `# 테스트: ${task.title}`,
@@ -34,8 +22,7 @@ export async function testerNode(ctx: WorkflowContext, devResult: string): Promi
     `1. 관련 테스트 파일이 있으면 실행하세요 (예: npm test, npx tsc --noEmit 등).`,
     `2. 테스트가 없으면 TypeScript 타입 체크만 수행하세요.`,
     `3. 결과를 간결하게 요약해서 보고하세요 (PASS/FAIL 포함).`,
-    ciInstructions,
-  ].filter(Boolean).join('\n');
+  ].join('\n');
 
   const result = await runCode({
     task: prompt,
