@@ -16,9 +16,6 @@ export interface AgentConfig {
   name: string;          // 표시 이름
   role?: string;         // 하네스 역할명 (orchestrator/planner/developer/reviewer/tester/researcher)
   discordToken: string;  // Discord Bot Token
-  configChannel?: string; // (레거시) 설정 전용 채널 — 사용 안 해도 됨
-  chatChannel?: string;   // (레거시) 전용 채팅 채널 — 사용 안 해도 됨
-
   // LLM 설정
   provider: string;      // "anthropic" | "openai" | "gemini" | "minimax"
   apiKey: string;

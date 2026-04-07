@@ -164,15 +164,12 @@ async function main(): Promise<void> {
   ]);
   await Promise.all([...readyPromises, cmdReadyPromise]);
 
-  // [6] 채널별 히스토리 로드 (대화 채널 + 협력 채널, 설정 채널 제외)
+  // [6] 채널별 히스토리 로드 (협력 채널)
   //     모든 봇이 전 채널 보기 권한을 가지므로 primaryClient로 통일합니다.
   const getLimit = (channelId: string) =>
     appCfg.channelLimits[channelId] ?? appCfg.historyLimit;
 
-  const historyChannels: string[] = [
-    ...appCfg.agents.map((a) => a.chatChannel).filter((c): c is string => !!c),
-    appCfg.collabChannel,
-  ];
+  const historyChannels: string[] = [appCfg.collabChannel];
 
   console.log('📂 히스토리 + 채널 컨텍스트 로드 중...');
   await Promise.allSettled(

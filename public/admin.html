@@ -612,16 +612,12 @@ function renderChannels() {
 
 function buildChannelRow(ch) {
   const row = document.createElement('div');
-  const role = getChannelRole(ch.id);
-  const agentName = getChannelAgent(ch.id);
   const histOverride = state.config?.channelLimits?.[ch.id];
 
   row.className = 'channel-row' + (state.activePanel === 'channel:' + ch.id ? ' active' : '');
   row.innerHTML = `
     <span class="ch-icon">#</span>
     <span class="ch-name">${esc(ch.name)}</span>
-    ${role ? `<span class="ch-role ${roleClass(role)}">${roleLabel(role)}</span>` : '<span class="ch-role role-none">미지정</span>'}
-    ${agentName ? `<span class="ch-agent">· ${esc(agentName)}</span>` : ''}
     ${histOverride ? `<span class="ch-history">히스토리 ${histOverride} ✏</span>` : ''}
   `;
   row.onclick = () => openChannelPanel(ch.id, ch.name);
@@ -636,28 +632,6 @@ function channelName(id) {
   const all = [...(state.channels.categories ?? []).flatMap(c=>c.channels), ...(state.channels.uncategorized ?? [])];
   const ch = all.find(c => c.id === id);
   return ch ? '#' + ch.name : `#${id}`;
-}
-function getChannelRole(id) {
-  if (!state.config) return null;
-  if (state.config.collabChannel === id) return 'collab';
-  for (const a of state.config.agents) {
-    if (a.chatChannel === id) return 'chat';
-    if (a.configChannel === id) return 'config';
-  }
-  return null;
-}
-function getChannelAgent(id) {
-  if (!state.config) return null;
-  for (const a of state.config.agents) {
-    if (a.chatChannel === id || a.configChannel === id) return a.name;
-  }
-  return null;
-}
-function roleClass(role) {
-  return { chat: 'role-chat', config: 'role-config', collab: 'role-collab' }[role] ?? 'role-none';
-}
-function roleLabel(role) {
-  return { chat: '대화채널', config: '설정채널', collab: '협력채널' }[role] ?? '미지정';
 }
 function allChannelOptions() {
   if (!state.channels) return '';
@@ -743,24 +717,6 @@ function openBotPanel(agentId) {
       </div>
 
       <div class="form-section">
-        <div class="form-section-title">채널 연결 ${restartBadge()}</div>
-        <div class="form-group">
-          <label>대화 채널</label>
-          <select id="f-chat-ch">
-            <option value="">-- 선택 --</option>
-            ${allChannelOptions().replace(`value="${agent.chatChannel}"`, `value="${agent.chatChannel}" selected`)}
-          </select>
-        </div>
-        <div class="form-group">
-          <label>설정 채널</label>
-          <select id="f-cfg-ch">
-            <option value="">-- 선택 --</option>
-            ${allChannelOptions().replace(`value="${agent.configChannel}"`, `value="${agent.configChannel}" selected`)}
-          </select>
-        </div>
-      </div>
-
-      <div class="form-section">
         <div class="form-section-title">기타 ${hotBadge()}</div>
         <div class="form-group">
           <label>GitHub 레포 <span style="color:var(--text-muted)">(owner/repo)</span></label>
@@ -818,8 +774,6 @@ async function saveBotPanel(agentId) {
       model: val('f-model'),
       apiKey: val('f-apikey'),
       baseUrl: val('f-baseurl') || undefined,
-      chatChannel: val('f-chat-ch'),
-      configChannel: val('f-cfg-ch'),
       githubRepo: val('f-github') || undefined,
       computerUse: document.getElementById('f-computer').checked,
       useClaudeCode: document.getElementById('f-use-claude-code').checked,
@@ -933,23 +887,6 @@ function openSetupBotPanel(discordBot) {
         <input id="nb-apikey" type="password">
       </div>
     </div>
-    <div class="form-section">
-      <div class="form-section-title">채널 연결 ${restartBadge()}</div>
-      <div class="form-group">
-        <label>대화 채널</label>
-        <select id="nb-chat-ch">
-          <option value="">-- 선택 --</option>
-          ${allChannelOptions()}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>설정 채널</label>
-        <select id="nb-cfg-ch">
-          <option value="">-- 선택 --</option>
-          ${allChannelOptions()}
-        </select>
-      </div>
-    </div>
 `,
     `<button class="btn-ghost" onclick="closePanel()">취소</button>
      <button class="btn-primary" onclick="addBotSave()">등록</button>`
@@ -970,8 +907,6 @@ async function addBotSave() {
     provider: val('nb-provider'),
     model: val('nb-model'),
     apiKey: val('nb-apikey'),
-    chatChannel: val('nb-chat-ch'),
-    configChannel: val('nb-cfg-ch'),
     mcpTokens: {},
   };
 
@@ -991,38 +926,11 @@ async function addBotSave() {
 // ── Channel Panel ──────────────────────────────────────────────
 function openChannelPanel(chId, chName) {
   state.activePanel = 'channel:' + chId;
-  const role = getChannelRole(chId) ?? '';
-  const agent = state.config?.agents.find(a => a.chatChannel === chId || a.configChannel === chId);
   const histOverride = state.config?.channelLimits?.[chId] ?? '';
-
-  const agentOptions = state.config.agents.map(a =>
-    `<option value="${a.id}" ${agent?.id === a.id ? 'selected' : ''}>${a.name}</option>`
-  ).join('');
 
   openPanel(
     `# ${esc(chName)}`,
     `<div class="form-section">
-      <div class="form-section-title">역할 ${restartBadge()}</div>
-      <div class="form-group" style="gap:8px">
-        ${[['','미지정'],['chat','대화채널'],['config','설정채널'],['collab','협력채널']].map(([v,l])=>`
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0">
-            <input type="radio" name="ch-role" value="${v}" ${role===v?'checked':''}>
-            <span class="ch-role ${roleClass(v)||'role-none'}" style="font-size:12px">${l}</span>
-          </label>`).join('')}
-      </div>
-    </div>
-
-    <div class="form-section">
-      <div class="form-section-title">담당 에이전트 ${restartBadge()}</div>
-      <div class="form-group">
-        <select id="ch-agent">
-          <option value="">-- 없음 --</option>
-          ${agentOptions}
-        </select>
-      </div>
-    </div>
-
-    <div class="form-section">
       <div class="form-section-title">히스토리 오버라이드 ${hotBadge()}</div>
       <div class="form-group">
         <div class="flex-row">
@@ -1042,31 +950,9 @@ function openChannelPanel(chId, chName) {
 }
 
 async function saveChannelPanel(chId) {
-  const role = document.querySelector('input[name="ch-role"]:checked')?.value ?? '';
-  const agentId = val('ch-agent');
   const hist = val('ch-hist');
-
   const cfg = state.config;
 
-  // 기존 채널 역할 해제
-  cfg.agents.forEach(a => {
-    if (a.chatChannel === chId) a.chatChannel = '';
-    if (a.configChannel === chId) a.configChannel = '';
-  });
-  if (cfg.collabChannel === chId) cfg.collabChannel = '';
-
-  // 새 역할 적용
-  if (role === 'collab') {
-    cfg.collabChannel = chId;
-  } else if (role && agentId) {
-    const agent = cfg.agents.find(a => a.id === agentId);
-    if (agent) {
-      if (role === 'chat') agent.chatChannel = chId;
-      if (role === 'config') agent.configChannel = chId;
-    }
-  }
-
-  // 히스토리 오버라이드
   if (hist) {
     cfg.channelLimits = cfg.channelLimits ?? {};
     cfg.channelLimits[chId] = parseInt(hist);
