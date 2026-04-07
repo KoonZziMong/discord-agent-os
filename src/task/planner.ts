@@ -16,9 +16,9 @@ const PLANNING_SYSTEM = `당신은 소프트웨어 개발 작업 계획가입니
 - dependencies는 반드시 먼저 완료되어야 할 태스크 id 배열 (없으면 [])
 - role: developer(코드 작성/수정), reviewer(검토), tester(테스트 실행), researcher(조사/문서화)
 - 태스크는 최대 6개
-- 순수 JSON 배열만 출력 (설명 텍스트, 마크다운 코드블록 없이)
+- 반드시 JSON 배열만 출력할 것. 앞뒤 설명 텍스트 금지. 마크다운 코드블록(\`\`\`)으로 감싸도 됨.
 
-출력 형식:
+출력 예시:
 [
   {
     "id": "T1",
@@ -26,6 +26,13 @@ const PLANNING_SYSTEM = `당신은 소프트웨어 개발 작업 계획가입니
     "description": "구체적인 작업 내용. 수정할 파일, 구현할 기능, 요구사항을 포함.",
     "dependencies": [],
     "role": "developer"
+  },
+  {
+    "id": "T2",
+    "title": "한 줄 제목",
+    "description": "구체적인 작업 내용.",
+    "dependencies": ["T1"],
+    "role": "reviewer"
   }
 ]`;
 
@@ -37,8 +44,10 @@ export async function planTasks(goal: string, llm: LLMClient): Promise<TaskInput
     async (_name: string, _input: unknown, _id: string): Promise<string> => '(not used)',
   );
 
-  // 응답에서 JSON 배열 추출 — [{ 로 시작하는 객체 배열만 매칭 (목표 텍스트의 [ 오매칭 방지)
-  const match = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
+  // 응답에서 JSON 배열 추출 — 코드블록 우선, 없으면 전체 텍스트에서 객체 배열 매칭
+  const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const source = codeBlock?.[1] ?? text;
+  const match = source.match(/\[\s*\{[\s\S]*\}\s*\]/);
   if (!match) {
     throw new Error(`플래너 응답에서 JSON을 찾을 수 없음:\n${text.slice(0, 300)}`);
   }
