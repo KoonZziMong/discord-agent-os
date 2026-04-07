@@ -44,4 +44,6 @@ out
 # Project-specific
 data/config.json
 data/tasks/
+data/personas/
+data/proposals/
 .playwright-mcp/
