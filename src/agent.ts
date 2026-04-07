@@ -33,6 +33,8 @@ import type { Task } from './task/types';
 import { executeWorkflow } from './agentGraph/executor';
 import { getRoleContent } from './roleContext';
 import { runRetrospective } from './retrospective';
+import { serializeAgentMessage, parseAgentMessage } from './agentProtocol';
+import * as taskWaiter from './taskWaiter';
 
 export class Agent {
   readonly id: string;
@@ -219,7 +221,8 @@ export class Agent {
 
   /**
    * 단일 태스크를 실행합니다.
-   * 선행 태스크 결과를 컨텍스트로 포함하여 claude_code에 위임합니다.
+   * 역할 봇이 config에 등록되어 있으면 [AGENT_MSG] TASK_ASSIGN으로 위임합니다.
+   * 역할 봇이 없으면 내부 워크플로우(executeWorkflow)로 폴백합니다.
    */
   private async executeTask(task: Task, graph: TaskGraph, channelId: string): Promise<string> {
     // 선행 태스크 결과를 task description에 포함
@@ -237,7 +240,17 @@ export class Agent {
       ? { ...task, description: `${task.description}\n\n## 선행 작업 결과\n${priorResults}` }
       : task;
 
-    // Phase 2+3: Agent Workflow 파이프라인 (planner→developer→reviewer→tester)
+    // 역할 봇 탐색 (자신 제외 — 오케스트레이터가 자기한테 위임하는 것 방지)
+    const hasRoleBot = this.appCfg.agents.some(
+      (a) => a.role === enrichedTask.role && a.id !== this.id,
+    );
+
+    if (hasRoleBot) {
+      return this.delegateTask(enrichedTask, graph.data.id, channelId);
+    }
+
+    // 역할 봇 없음 → 내부 워크플로우 폴백
+    console.log(`[${this.name}] 역할 봇 없음(${enrichedTask.role}) — 내부 워크플로우로 폴백`);
     const workflow = await executeWorkflow(
       enrichedTask,
       graph.data.id,
@@ -255,6 +268,61 @@ export class Agent {
       `\n**테스트:** ${workflow.testResult.slice(0, 200)}`,
       workflow.approved ? '' : '\n⚠️ 리뷰 미승인 상태로 완료',
     ].filter(Boolean).join('\n');
+  }
+
+  /**
+   * 태스크를 해당 역할 봇에게 [AGENT_MSG] TASK_ASSIGN으로 위임합니다.
+   * 봇의 응답(TASK_RESULT)을 taskWaiter로 대기하다가 결과를 반환합니다.
+   */
+  private async delegateTask(
+    task: Task,
+    graphId: string,
+    channelId: string,
+  ): Promise<string> {
+    const waiterKey = `${graphId}/${task.id}`;
+    const cycleId = `${graphId}-${task.id}`;
+    const TIMEOUT_MS = 15 * 60 * 1000; // 15분
+
+    const envelope = serializeAgentMessage(
+      {
+        cycleId,
+        turn: 1,
+        from: this.id,
+        to: task.role,        // router: agents.find(a => a.config.role === header.to)
+        type: 'TASK_ASSIGN',
+        goalId: waiterKey,
+      },
+      [
+        `## 태스크 정보`,
+        `**제목:** ${task.title}`,
+        ``,
+        task.description,
+        ``,
+        `---`,
+        `완료 후 \`[AGENT_MSG] type: TASK_RESULT\` 형식으로 결과를 보고하세요.`,
+        `(봉투 형식은 팀 공통 규약 참조)`,
+      ].join('\n'),
+    );
+
+    const channel = await this.botClient.channels.fetch(channelId).catch(() => null) as TextChannel | null;
+    if (!channel) throw new Error(`채널 접근 불가 (delegateTask): ${channelId}`);
+
+    // 대기 등록 먼저 → 메시지 전송 (race condition 방지)
+    const resultPromise = taskWaiter.register(waiterKey, TIMEOUT_MS);
+    await channel.send(envelope);
+    console.log(`[${this.name}] ➡️  태스크 위임: [${task.id}] ${task.title} → ${task.role}`);
+
+    const resultText = await resultPromise;
+
+    // 응답이 [AGENT_MSG] TASK_RESULT 형식이면 status 확인
+    const parsed = parseAgentMessage(resultText);
+    if (parsed?.header.type === 'TASK_RESULT') {
+      if (parsed.header.status === 'FAILED' || parsed.header.status === 'BLOCKED') {
+        throw new Error(parsed.body.slice(0, 300) || `태스크 ${parsed.header.status}: ${task.title}`);
+      }
+      return parsed.body || resultText;
+    }
+    return resultText;
   }
 
   // ── 내부 메서드 ────────────────────────────────────────────

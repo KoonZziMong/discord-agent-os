@@ -35,6 +35,7 @@ import {
   DEFAULT_MAX_BOT_MESSAGES_PER_MINUTE,
 } from './agentProtocol';
 import type { CycleState } from './agentProtocol';
+import * as taskWaiter from './taskWaiter';
 
 // ── 사이클 상태 인메모리 저장 ──────────────────────────────────
 
@@ -182,6 +183,13 @@ async function handleHarnessMessage(
   };
   activeCycles.set(header.cycleId, cycle);
 
+  // TASK_RESULT 수신 시 태스크 대기 해소 후 조기 반환
+  // delegateTask()가 register()로 대기 중인 경우 여기서 resolve됩니다.
+  if (header.type === 'TASK_RESULT' && taskWaiter.resolve(header.goalId, parsed.body)) {
+    console.log(`[하네스] TASK_RESULT → 태스크 대기 해소 (goalId: ${header.goalId})`);
+    return;
+  }
+
   // SYSTEM_USER 대상 → 유저 채널에 그대로 출력 (라우팅 없음)
   if (header.to === 'SYSTEM_USER') {
     // 이미 봇이 채널에 메시지를 보냈으므로 추가 처리 불필요
@@ -226,9 +234,22 @@ async function handleHarnessMessage(
       authorName: targetAgent.name,
       content: responseText,
     });
+
+    // TASK_ASSIGN에 대한 직접 응답 → taskWaiter 해소 (direct capture)
+    // 팀원 봇이 [AGENT_MSG] TASK_RESULT를 별도 메시지로 보내지 않는 경우도 처리
+    if (header.type === 'TASK_ASSIGN') {
+      taskWaiter.resolve(header.goalId, responseText);
+    }
+
     await sendSplit(agentChannel, responseText);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+
+    // TASK_ASSIGN 실패 시 태스크 거부
+    if (header.type === 'TASK_ASSIGN') {
+      taskWaiter.reject(header.goalId, `${targetAgent.name} 응답 오류: ${msg}`);
+    }
+
     console.error(`[하네스] 에이전트 응답 오류 (${targetAgent.name}): ${msg}`);
     await agentChannel.send(`❌ ${targetAgent.name} 응답 오류: ${msg.slice(0, 100)}`).catch(() => {});
   }
