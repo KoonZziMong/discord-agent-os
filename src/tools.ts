@@ -89,13 +89,16 @@ export const CLAUDE_CODE_TOOL: Anthropic.Tool = {
   description:
     '개발 작업(코드 작성, 수정, 리팩토링, 디버깅, 테스트 등)을 Claude Code에 위임합니다. ' +
     '실제 파일을 읽고 쓸 수 있으며, 작업이 완료되면 결과를 반환합니다. ' +
-    '이전 작업을 이어서 진행하려면 resume을 true로 설정하세요.',
+    '결과에 [claude_code_session: <id>]가 포함되면 세션이 열려 있으므로, ' +
+    '연속 작업 시 resume: true와 동일한 sessionKey를 설정하면 이전 컨텍스트를 재사용합니다. ' +
+    '세션이 이미 열려 있으면 resume을 생략해도 자동으로 이어서 실행됩니다. ' +
+    '관련 작업은 가능하면 하나의 task 설명에 묶어서 전달하세요.',
   input_schema: {
     type: 'object' as const,
     properties: {
       task: {
         type: 'string',
-        description: '수행할 개발 작업을 구체적으로 설명합니다. 파일 경로, 요구사항, 제약조건을 포함하세요.',
+        description: '수행할 개발 작업을 구체적으로 설명합니다. 파일 경로, 요구사항, 제약조건을 포함하세요. 연관된 여러 작업은 하나의 task에 묶어서 전달하면 컨텍스트를 절약할 수 있습니다.',
       },
       workdir: {
         type: 'string',
@@ -103,7 +106,11 @@ export const CLAUDE_CODE_TOOL: Anthropic.Tool = {
       },
       resume: {
         type: 'boolean',
-        description: '이전 Claude Code 세션을 이어서 진행할지 여부. 연속 작업 시 true로 설정하세요.',
+        description: '이전 세션을 명시적으로 이어서 진행할지 여부. 생략 시 sessionKey에 해당하는 세션이 존재하면 자동으로 재사용됩니다.',
+      },
+      sessionKey: {
+        type: 'string',
+        description: '세션을 식별하는 키. 같은 태스크 내 연속 호출에서 동일한 키를 사용하면 세션이 공유됩니다. 미지정 시 채널 ID를 사용합니다.',
       },
     },
     required: ['task'],

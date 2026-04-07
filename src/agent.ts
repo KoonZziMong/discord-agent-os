@@ -24,7 +24,7 @@ import * as history from './history';
 import * as persona from './persona';
 import { getChannelContext, buildContextBlock } from './channelContext';
 import { CONFIG_TOOLS, CHAT_TOOLS, COMPUTER_USE_TOOLS, CLAUDE_CODE_TOOL, type AnyTool } from './tools';
-import { runClaudeCode } from './claude-code';
+import { runClaudeCode, hasClaudeCodeSession } from './claude-code';
 import { sendSplit, getErrorMessage, delay, keepTyping } from './utils';
 import { planTasks } from './task/planner';
 import { TaskGraph } from './task/graph';
@@ -419,16 +419,23 @@ export class Agent {
   ): Promise<ToolResultContent> {
     if (toolName === 'claude_code') {
       const input = toolInput as { task: string; workdir?: string; resume?: boolean; sessionKey?: string };
-      console.log(`[${this.name}] 🤖 Claude Code 실행 중... (resume: ${input.resume ?? false}, key: ${input.sessionKey ?? channelId})`);
+      const storeKey = input.sessionKey ?? channelId;
+      // LLM이 resume을 명시하지 않으면, 기존 세션이 있을 경우 자동으로 이어서 실행합니다.
+      const shouldResume = input.resume ?? hasClaudeCodeSession(storeKey);
+      console.log(`[${this.name}] 🤖 Claude Code 실행 중... (resume: ${shouldResume}, key: ${storeKey})`);
       const result = await runClaudeCode({
         task: input.task,
         workdir: input.workdir,
-        resume: input.resume ?? false,
+        resume: shouldResume,
         channelId,
         sessionKey: input.sessionKey,
       });
       console.log(`[${this.name}] 🤖 Claude Code 완료 (session: ${result.sessionId ?? 'none'})`);
-      return result.text;
+      // sessionId를 결과에 포함시켜 LLM이 세션 존재를 인지하고 다음 호출에서 resume: true를 사용할 수 있게 합니다.
+      const sessionNote = result.sessionId
+        ? `\n\n[claude_code_session: ${result.sessionId}]`
+        : '';
+      return result.text + sessionNote;
     }
 
     if (toolName === 'update_persona') {

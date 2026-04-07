@@ -57,14 +57,12 @@ async function applyOrRejectProposal(
   proposal: import('./roleProposals').RoleProposal,
   notifyChannel: TextChannel,
   appCfg: AppConfig,
-  clients: Client[],
+  cmdClient: Client | null,
   agents: Agent[],
 ): Promise<void> {
   if (emoji === '✅') {
     console.log(`[proposal] 승인: ${proposal.proposalId} (role: ${proposal.targetRole})`);
     try {
-      // CmdBot으로 역할 채널 핀 수정
-      const cmdClient = clients.find((c) => !agents.some((a) => a.botClient === c));
       if (!cmdClient) throw new Error('CmdBot 없음');
 
       const roleChannel = await cmdClient.channels.fetch(proposal.roleChannelId) as TextChannel;
@@ -329,7 +327,7 @@ async function main(): Promise<void> {
       // proposalId 없으면 메시지 ID로 검색
       const proposal = findProposalByMessageId(msg.id);
       if (!proposal) return;
-      await applyOrRejectProposal(emoji, proposal, msg.channel as TextChannel, appCfg, clients, agents);
+      await applyOrRejectProposal(emoji, proposal, msg.channel as TextChannel, appCfg, cmdClient, agents);
       return;
     }
 
@@ -342,7 +340,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    await applyOrRejectProposal(emoji, proposal, msg.channel as TextChannel, appCfg, clients, agents);
+    await applyOrRejectProposal(emoji, proposal, msg.channel as TextChannel, appCfg, cmdClient, agents);
   };
 
   primaryClient.on(Events.MessageReactionAdd, (reaction, user) => {
