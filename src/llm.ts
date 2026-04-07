@@ -64,8 +64,8 @@ class AnthropicClient implements LLMClient {
   private client: Anthropic;
   private model: string;
 
-  constructor(apiKey: string, model: string) {
-    this.client = new Anthropic({ apiKey });
+  constructor(apiKey: string, model: string, baseUrl?: string) {
+    this.client = new Anthropic({ apiKey, ...(baseUrl ? { baseURL: baseUrl } : {}) });
     this.model = model;
   }
 
@@ -258,6 +258,11 @@ export function createLLMClient(cfg: AgentConfig): LLMClient {
   }
   if (cfg.provider === 'anthropic' && !cfg.baseUrl) {
     return new AnthropicClient(cfg.apiKey, cfg.model);
+  }
+  // MiniMax는 Anthropic 호환 API — OpenAI SDK가 아닌 Anthropic SDK로 라우팅
+  if (cfg.provider === 'minimax') {
+    const baseUrl = cfg.baseUrl ?? 'https://api.minimax.io/anthropic';
+    return new AnthropicClient(cfg.apiKey, cfg.model, baseUrl);
   }
   return new OpenAICompatClient(cfg.apiKey, cfg.model, cfg.baseUrl);
 }
