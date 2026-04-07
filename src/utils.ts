@@ -142,11 +142,16 @@ export function getErrorMessage(err: unknown): { message: string; retryAfter?: n
     if (msg.includes('429') || msg.toLowerCase().includes('rate limit')) {
       return { message: '⏳ 요청이 너무 많습니다. 잠시 후 다시 시도할게요.', retryAfter: 5000 };
     }
-    if (msg.includes('5') && msg.match(/5\d\d/)) {
-      return { message: '⚠️ AI 서버에 일시적인 문제가 있습니다. 잠시 후 다시 시도할게요.', retryAfter: 3000 };
+    // 영구 오류 — 재시도 없음
+    if (msg.includes('insufficient_balance') || msg.includes('insufficient balance')) {
+      return { message: '❌ API 크레딧이 부족합니다. 충전 후 다시 시도해주세요.' };
     }
     if (msg.includes('401') || msg.includes('invalid_api_key')) {
       return { message: '❌ API 키가 유효하지 않습니다. 관리자에게 문의하세요.' };
+    }
+    // 일시적 서버 오류(502/503/504)만 재시도
+    if (msg.match(/5[02-9]\d/) || msg.includes('502') || msg.includes('503') || msg.includes('504')) {
+      return { message: '⚠️ AI 서버에 일시적인 문제가 있습니다. 잠시 후 다시 시도할게요.', retryAfter: 3000 };
     }
     return { message: `❌ 오류가 발생했습니다: ${msg.slice(0, 100)}` };
   }
