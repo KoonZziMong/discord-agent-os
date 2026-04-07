@@ -727,14 +727,15 @@ function openBotPanel(agentId) {
         </div>
         <div class="form-group">
           <label>모델</label>
-          <input id="f-model" value="${esc(agent.model)}">
+          <input id="f-model" value="${esc(agent.model)}" list="f-model-list" autocomplete="off">
+          <datalist id="f-model-list"></datalist>
         </div>
         <div class="form-group">
           <label>API 키</label>
           <input id="f-apikey" value="${esc(agent.apiKey)}" type="password">
         </div>
         <div class="form-group">
-          <label>Base URL <span style="color:var(--text-muted)">(anthropic 외 provider에서 사용)</span></label>
+          <label>Base URL <span style="color:var(--text-muted)">(자동 설정되지 않는 경우만 입력)</span></label>
           <input id="f-baseurl" value="${esc(agent.baseUrl ?? '')}">
         </div>
       </div>
@@ -1225,6 +1226,43 @@ async function saveSystem() {
     closePanel();
   } catch(e) {
     toast('저장 실패: ' + e.message, 'error');
+  }
+}
+
+// ── Provider 모델/BaseURL 자동 설정 ───────────────────────────
+const PROVIDER_DEFAULTS = {
+  anthropic: {
+    models: ['claude-opus-4-6','claude-sonnet-4-6','claude-haiku-4-5-20251001'],
+    baseUrl: '',
+  },
+  openai: {
+    models: ['gpt-4o','gpt-4o-mini','o3','o4-mini'],
+    baseUrl: '',
+  },
+  gemini: {
+    models: ['gemini-2.5-pro-preview-05-06','gemini-2.5-flash-preview-04-17','gemini-2.0-flash'],
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+  },
+  minimax: {
+    models: ['MiniMax-M2.7','MiniMax-Text-01'],
+    baseUrl: 'https://api.minimax.io/anthropic',
+  },
+};
+
+function updateModelHint() {
+  const provider = val('f-provider');
+  const defaults = PROVIDER_DEFAULTS[provider] ?? { models: [], baseUrl: '' };
+
+  // datalist 업데이트
+  const dl = document.getElementById('f-model-list');
+  if (dl) {
+    dl.innerHTML = defaults.models.map(m => `<option value="${m}">`).join('');
+  }
+
+  // baseUrl 자동 채움 — 이미 값이 있으면 덮어쓰지 않음
+  const buEl = document.getElementById('f-baseurl');
+  if (buEl && !buEl.value && defaults.baseUrl) {
+    buEl.value = defaults.baseUrl;
   }
 }
 
