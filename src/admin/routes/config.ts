@@ -13,8 +13,6 @@ import type { Agent } from '../../agent';
 import type { AppConfig, AgentConfig } from '../../config';
 import { saveConfig } from '../../config';
 import { hotReloadAgent, hotReloadAppConfig } from '../hotreload';
-import * as fs from 'fs';
-import * as path from 'path';
 
 function maskToken(val: string): string {
   if (!val || val.length < 8) return '••••••••';
@@ -90,23 +88,6 @@ export function createConfigRouter(agents: Agent[], appCfg: AppConfig) {
         }
       }
 
-      // 신규 에이전트 페르소나 파일 자동 생성 (없는 경우에만)
-      for (const agentNext of next.agents) {
-        const isNew = !appCfg.agents.find((a) => a.id === agentNext.id);
-        if (isNew && agentNext.personaFile) {
-          const dir = path.dirname(agentNext.personaFile);
-          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-          if (!fs.existsSync(agentNext.personaFile)) {
-            fs.writeFileSync(
-              agentNext.personaFile,
-              `# ${agentNext.name} 페르소나\n\n당신은 ${agentNext.name}입니다.\n`,
-              'utf-8',
-            );
-            console.log(`[Admin] 페르소나 파일 생성: ${agentNext.personaFile}`);
-          }
-        }
-      }
-
       // 즉시 반영 가능한 항목 적용
       hotReloadAppConfig(appCfg, next);
       for (const agentNext of next.agents) {
@@ -169,31 +150,6 @@ export function createConfigRouter(agents: Agent[], appCfg: AppConfig) {
       appCfg.agents[origIdx] = agent.config;
       saveConfig(appCfg);
 
-      res.json({ ok: true });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  // 페르소나 조회
-  router.get('/agents/:id/persona', (req, res) => {
-    const agent = agents.find((a) => a.id === req.params.id);
-    if (!agent) { res.status(404).json({ error: '에이전트 없음' }); return; }
-    try {
-      const content = fs.readFileSync(agent.config.personaFile, 'utf-8');
-      res.json({ content });
-    } catch {
-      res.json({ content: '' });
-    }
-  });
-
-  // 페르소나 저장 (즉시 반영 — persona.load()가 매번 파일을 읽음)
-  router.put('/agents/:id/persona', (req, res) => {
-    const agent = agents.find((a) => a.id === req.params.id);
-    if (!agent) { res.status(404).json({ error: '에이전트 없음' }); return; }
-    try {
-      const { content } = req.body as { content: string };
-      fs.writeFileSync(agent.config.personaFile, content, 'utf-8');
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: String(err) });

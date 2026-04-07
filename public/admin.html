@@ -690,7 +690,7 @@ function openBotPanel(agentId) {
   const agent = state.config.agents.find(a => a.id === agentId);
   if (!agent) return;
 
-  loadPersona(agentId).then(persona => {
+  {
     const mcpRows = Object.entries(agent.mcpTokens ?? {})
       .map(([k,v]) => `
         <div class="kv-row" data-key="${esc(k)}">
@@ -783,14 +783,6 @@ function openBotPanel(agentId) {
       </div>
 
       <div class="form-section">
-        <div class="form-section-title">페르소나 ${hotBadge()}</div>
-        <div class="form-group">
-          <textarea id="f-persona" style="min-height:180px">${esc(persona)}</textarea>
-          <span class="field-hint">파일 저장 즉시 반영됩니다.</span>
-        </div>
-      </div>
-
-      <div class="form-section">
         <div class="form-section-title">MCP 토큰 ${restartBadge()}</div>
         <div class="kv-list" id="mcp-list">${mcpRows}</div>
         <button class="btn-ghost" style="width:100%;margin-top:6px" onclick="addMcpRow()">+ 토큰 추가</button>
@@ -803,14 +795,7 @@ function openBotPanel(agentId) {
     );
     // 패널 렌더 후 모델 드롭다운 초기화
     updateModelHint(agent.model);
-  });
-}
-
-async function loadPersona(agentId) {
-  try {
-    const data = await api('GET', `/config/agents/${agentId}/persona`);
-    return data.content ?? '';
-  } catch { return ''; }
+  }
 }
 
 function addMcpRow() {
@@ -841,12 +826,7 @@ async function saveBotPanel(agentId) {
       mcpTokens: collectKvList('mcp-list'),
     };
 
-    const persona = val('f-persona');
-
-    await Promise.all([
-      api('PUT', `/config/agents/${agentId}`, patch),
-      api('PUT', `/config/agents/${agentId}/persona`, { content: persona }),
-    ]);
+    await api('PUT', `/config/agents/${agentId}`, patch);
 
     await loadConfig();
     toast('저장 완료', 'success');
@@ -970,12 +950,7 @@ function openSetupBotPanel(discordBot) {
         </select>
       </div>
     </div>
-    <div class="form-section">
-      <div class="form-section-title">페르소나</div>
-      <div class="form-group">
-        <textarea id="nb-persona" placeholder="당신은 ...입니다."></textarea>
-      </div>
-    </div>`,
+`,
     `<button class="btn-ghost" onclick="closePanel()">취소</button>
      <button class="btn-primary" onclick="addBotSave()">등록</button>`
   );
@@ -997,18 +972,12 @@ async function addBotSave() {
     apiKey: val('nb-apikey'),
     chatChannel: val('nb-chat-ch'),
     configChannel: val('nb-cfg-ch'),
-    personaFile: `data/personas/${id}.md`,
     mcpTokens: {},
   };
-
-  const persona = val('nb-persona');
 
   try {
     state.config.agents.push(newAgent);
     await api('PUT', '/config', state.config);
-    if (persona) {
-      await api('PUT', `/config/agents/${id}/persona`, { content: persona });
-    }
     await loadConfig();
     toast('봇 등록 완료 — 재시작 후 적용됩니다', 'success');
     closePanel();
@@ -1190,10 +1159,6 @@ function openSystemPanel() {
         <input id="s-cmd-task" value="${esc((cfg.commands?.task ?? ['!목표','!task']).join(', '))}">
       </div>
       <div class="form-group">
-        <label>페르소나 조회</label>
-        <input id="s-cmd-persona" value="${esc((cfg.commands?.persona ?? ['!페르소나','!persona']).join(', '))}">
-      </div>
-      <div class="form-group">
         <label>도움말</label>
         <input id="s-cmd-help" value="${esc((cfg.commands?.help ?? ['!도움말','!help']).join(', '))}">
       </div>
@@ -1226,7 +1191,6 @@ async function saveSystem() {
   cfg.toolBots = collectKvList('toolbot-list');
   cfg.commands = {
     task:    splitTrimmed(val('s-cmd-task'))    || ['!목표', '!task'],
-    persona: splitTrimmed(val('s-cmd-persona')) || ['!페르소나', '!persona'],
     help:    splitTrimmed(val('s-cmd-help'))    || ['!도움말', '!help'],
   };
 

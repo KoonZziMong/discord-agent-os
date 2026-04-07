@@ -2,7 +2,7 @@
  * agent.ts — AI 에이전트 클래스
  *
  * 각 Discord 봇(찌몽/아루/센세)은 이 Agent 클래스의 인스턴스입니다.
- * 에이전트마다 독립된 페르소나, LLMClient, AgentMCPManager를 가집니다.
+ * 에이전트마다 독립된 LLMClient, AgentMCPManager를 가집니다.
  *
  * 대화 히스토리는 history.ts(인메모리)에서 관리합니다.
  *   - 유저 메시지: router.ts에서 수신 시 history.addMessage() 호출
@@ -21,9 +21,8 @@ import { createLLMClient, type LLMClient, type ToolResultContent } from './llm';
 import { AgentMCPManager } from './mcp';
 import { computerAction, executeBash, executeTextEditor } from './computer';
 import * as history from './history';
-import * as persona from './persona';
 import { getChannelContext, buildContextBlock } from './channelContext';
-import { CONFIG_TOOLS, CHAT_TOOLS, COMPUTER_USE_TOOLS, CLAUDE_CODE_TOOL, type AnyTool } from './tools';
+import { CHAT_TOOLS, COMPUTER_USE_TOOLS, CLAUDE_CODE_TOOL, type AnyTool } from './tools';
 import { runClaudeCode, hasClaudeCodeSession } from './claude-code';
 import { sendSplit, getErrorMessage, delay, keepTyping } from './utils';
 import { planTasks } from './task/planner';
@@ -79,22 +78,21 @@ export class Agent {
    * 유저 메시지는 router.ts에서 history에 이미 추가된 상태로 호출됩니다.
    * history.getHistory()로 유저 메시지 포함 전체 히스토리를 가져와 API 호출합니다.
    */
-  async respond(message: Message, mode: 'chat' | 'config', services: string[] = []): Promise<void> {
+  async respond(message: Message, services: string[] = []): Promise<void> {
     const channel = message.channel as TextChannel;
 
     const label = `[${this.name}]`;
-    const modeTag = mode === 'config' ? '설정' : '대화';
     const toolTag = services.length > 0 ? ` +[${services.join(',')}]` : '';
     const startedAt = Date.now();
 
     const MAX_ATTEMPTS = 3; // 최초 1회 + 재시도 최대 2회
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const stopTyping = keepTyping(channel);
-      console.log(`${label} ${modeTag}${toolTag} 응답 중... (${message.author.username})${attempt > 1 ? ` [재시도 ${attempt - 1}]` : ''}`);
+      console.log(`${label} 대화${toolTag} 응답 중... (${message.author.username})${attempt > 1 ? ` [재시도 ${attempt - 1}]` : ''}`);
       try {
-        const systemPrompt = await this.buildSystemPrompt(mode, message.channelId);
+        const systemPrompt = await this.buildSystemPrompt(message.channelId);
         const historyMessages = history.getHistory(message.channelId, this.id, false);
-        const tools = mode === 'config' ? CONFIG_TOOLS : this.buildChatTools(services);
+        const tools = this.buildChatTools(services);
 
         const { text: responseText, usage } = await this.llm.chat(
           systemPrompt,
@@ -146,7 +144,7 @@ export class Agent {
     collabChannelId: string,
     services: string[] = [],
   ): Promise<string> {
-    const systemPrompt = await this.buildSystemPrompt('chat', collabChannelId);
+    const systemPrompt = await this.buildSystemPrompt(collabChannelId);
     const historyMessages = history.getHistory(collabChannelId, this.id, true);
 
     const { text } = await this.llm.chat(
@@ -201,7 +199,7 @@ export class Agent {
 
       // 4. 회고 — 사이클 완료 후 이슈 분석 및 역할 핀 개선 제안 (Phase 1: 유저 컨펌)
       if (graph.isComplete() || graph.hasFailed()) {
-        const systemPrompt = await this.buildSystemPrompt('chat', message.channelId);
+        const systemPrompt = await this.buildSystemPrompt(message.channelId);
         runRetrospective({
           graph: graph.data,
           llm: this.llm,
@@ -258,7 +256,7 @@ export class Agent {
       channelId,
       this.llm,
       this.name,
-      await this.buildSystemPrompt('chat', channelId),
+      await this.buildSystemPrompt(channelId),
       runClaudeCode,
       this.config.githubRepo,
       this.appCfg.maxReviewRetries,
@@ -366,9 +364,8 @@ export class Agent {
     return tools;
   }
 
-  private async buildSystemPrompt(mode: 'chat' | 'config', channelId?: string): Promise<string> {
-    const personaContent = persona.load(this.config.personaFile);
-    const base = `당신은 ${this.name}입니다.\n\n${personaContent}`;
+  private async buildSystemPrompt(channelId?: string): Promise<string> {
+    const base = `당신은 ${this.name}입니다.`;
 
     // 채널 토픽 + 핀 메시지 컨텍스트
     const channelCtxBlock = channelId
@@ -407,16 +404,6 @@ export class Agent {
             '응답 말미에 "[⚠️ claude_code 미사용]" 태그와 함께 사용하지 못한 이유를 간략히 명시하세요.'
           : '- 코드 작성·수정·실행·테스트 작업은 LLM으로 직접 수행합니다.');
 
-    if (mode === 'config') {
-      return (
-        base + channelCtxBlock + roleBlock + common +
-        '\n\n---\n' +
-        '## 설정 채널 지시사항\n' +
-        '사용자가 이 채널에서 내리는 지시는 당신의 페르소나·규칙·기억을 수정하는 명령입니다.\n' +
-        '지시에 따라 반드시 update_persona 도구를 사용하여 페르소나 파일을 수정하고, ' +
-        '수정 완료 후 어떤 내용을 어떻게 변경했는지 한국어로 확인 메시지를 보내세요.'
-      );
-    }
     return base + channelCtxBlock + roleBlock + common;
   }
 
@@ -449,16 +436,6 @@ export class Agent {
         ? `\n\n[claude_code_session: ${result.sessionId}]`
         : '';
       return result.text + sessionNote;
-    }
-
-    if (toolName === 'update_persona') {
-      const input = toolInput as {
-        action: 'append_rule' | 'update_memory' | 'replace_section';
-        content: string;
-        section?: string;
-      };
-      persona.update(this.config.personaFile, input.action, input.content, input.section);
-      return `페르소나 파일 수정 완료 (action: ${input.action})`;
     }
 
     if (toolName === 'computer') {

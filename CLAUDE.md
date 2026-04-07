@@ -79,7 +79,6 @@ src/
 commands/           — CmdBot 슬래시 커맨드 (AI 파이프라인과 무관)
 data/
   config.json       — 봇 설정 (토큰·API 키 포함 — 절대 커밋 금지)
-  personas/         — 봇별 페르소나 (파일명: {channelId}.md)
   tasks/            — TaskGraph JSON 영속화
   proposals/        — 역할 핀 업데이트 제안
 ```
@@ -106,7 +105,6 @@ data/
 ### 주의사항
 
 - `data/config.json` 절대 출력하거나 커밋하지 말 것
-- `data/personas/` 파일명은 채널 ID 숫자 형태 (`agent-a.md` 아님)
 - `dist/` 빌드 결과물 — 직접 수정 금지
 - `commands/` JS 슬래시 커맨드 — AI 파이프라인과 무관, 독립적으로 테스트
 - `autonomousRoleUpdates: false`(기본값) — 역할 핀 변경은 유저 컨펌 필요

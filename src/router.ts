@@ -7,7 +7,7 @@
  *      - 그 외 봇 메시지 → 무시
  *   2. 협력 채널 (유저 메시지) → collaboration.handle() 호출
  *   3. 그 외 채널 (유저 메시지) → 멘션된 봇만 응답 (@에이전트 멘션 기반)
- *   4. 명령어(!페르소나, !도움말) → AI 호출 없이 즉시 응답
+ *   4. 명령어(!도움말) → AI 호출 없이 즉시 응답
  *
  * 하네스 라우팅:
  *   - [AGENT_MSG] 헤더의 `to` 필드로 대상 에이전트를 결정
@@ -19,7 +19,6 @@ import { Message, Client, TextChannel } from 'discord.js';
 import type { Agent } from './agent';
 import type { AppConfig } from './config';
 import { handle as handleCollab } from './collaboration';
-import { load } from './persona';
 import { sendSplit } from './utils';
 import * as history from './history';
 import { loadChannelContext, getChannelContext } from './channelContext';
@@ -61,42 +60,29 @@ function extractToolServices(message: Message, toolBots: Record<string, string>)
   return services;
 }
 
-async function handleCommand(
-  cmd: 'persona' | 'help',
+async function handleHelpCommand(
   agent: Agent,
   message: Message,
   appCfg: AppConfig,
 ): Promise<void> {
   const channel = message.channel as TextChannel;
+  const cmds = appCfg.commands;
+  const taskPrefixes = cmds.task.map((p) => `\`${p}\``).join(' / ');
+  const autonomousPrefixes = cmds.autonomous.map((p) => `\`${p}\``).join(' / ');
+  const helpPrefixes = cmds.help.map((p) => `\`${p}\``).join(' / ');
+  const agentNames = appCfg.agents.map((a) => `@${a.name}`);
 
-  if (cmd === 'persona') {
-    const content = load(agent.config.personaFile);
-    await sendSplit(channel, `**${agent.name}의 현재 페르소나**\n\`\`\`markdown\n${content}\n\`\`\``);
-    return;
-  }
-
-  if (cmd === 'help') {
-    const cmds = appCfg.commands;
-    const taskPrefixes = cmds.task.map((p) => `\`${p}\``).join(' / ');
-    const autonomousPrefixes = cmds.autonomous.map((p) => `\`${p}\``).join(' / ');
-    const personaPrefixes = cmds.persona.map((p) => `\`${p}\``).join(' / ');
-    const helpPrefixes = cmds.help.map((p) => `\`${p}\``).join(' / ');
-    const agentNames = appCfg.agents.map((a) => `@${a.name}`);
-
-    const help = [
-      `**${agent.name} 사용 가이드**`,
-      '',
-      `→ ${taskPrefixes} <목표> — 오케스트레이터가 팀에 위임하여 수행합니다`,
-      `→ ${autonomousPrefixes} <목표> — 단독 에이전트 자동 파이프라인으로 수행합니다`,
-      `→ ${personaPrefixes} — 현재 페르소나 확인`,
-      `→ ${helpPrefixes} — 이 메시지 표시`,
-      '',
-      '**협력 채널**',
-      `→ ${agentNames.join(', ')} 멘션 — 해당 에이전트 지목`,
-    ].join('\n');
-    await channel.send(help);
-    return;
-  }
+  const help = [
+    `**${agent.name} 사용 가이드**`,
+    '',
+    `→ ${taskPrefixes} <목표> — 오케스트레이터가 팀에 위임하여 수행합니다`,
+    `→ ${autonomousPrefixes} <목표> — 단독 에이전트 자동 파이프라인으로 수행합니다`,
+    `→ ${helpPrefixes} — 이 메시지 표시`,
+    '',
+    '**협력 채널**',
+    `→ ${agentNames.join(', ')} 멘션 — 해당 에이전트 지목`,
+  ].join('\n');
+  await channel.send(help);
 }
 
 // ── 하네스 라우팅 ─────────────────────────────────────────────
@@ -353,12 +339,8 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
     const trimmed = message.content.trim();
     const cmds = appCfg.commands;
 
-    if (cmds.persona.includes(trimmed)) {
-      await handleCommand('persona', mentionedAgent, message, appCfg);
-      return;
-    }
     if (cmds.help.includes(trimmed)) {
-      await handleCommand('help', mentionedAgent, message, appCfg);
+      await handleHelpCommand(mentionedAgent, message, appCfg);
       return;
     }
 
@@ -392,7 +374,7 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
     });
 
     const services = extractToolServices(message, appCfg.toolBots);
-    await mentionedAgent.respond(message, 'chat', services);
+    await mentionedAgent.respond(message, services);
   };
 }
 

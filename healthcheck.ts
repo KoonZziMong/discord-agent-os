@@ -130,19 +130,6 @@ if (!fs.existsSync(CONFIG_PATH)) {
           fail(`[${agentId}] 필수 필드 누락`, missing.join(', '));
         }
 
-        // 페르소나 파일 존재 여부
-        if (agent.personaFile) {
-          const personaPath = path.isAbsolute(String(agent.personaFile))
-            ? String(agent.personaFile)
-            : path.resolve(PROJECT_ROOT, String(agent.personaFile));
-          if (fs.existsSync(personaPath)) {
-            pass(`[${agentId}] 페르소나 파일 존재`, path.relative(PROJECT_ROOT, personaPath));
-          } else {
-            fail(`[${agentId}] 페르소나 파일 없음`, personaPath);
-          }
-        } else {
-          fail(`[${agentId}] personaFile 누락`);
-        }
       }
     }
   } catch (err) {

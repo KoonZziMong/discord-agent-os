@@ -16,7 +16,6 @@ export interface AgentConfig {
   name: string;          // 표시 이름
   role?: string;         // 하네스 역할명 (orchestrator/planner/developer/reviewer/tester/researcher)
   discordToken: string;  // Discord Bot Token
-  personaFile: string;   // 절대 경로 (loadConfig에서 해석) — 채널 핀 없을 때 폴백
   configChannel?: string; // (레거시) 설정 전용 채널 — 사용 안 해도 됨
   chatChannel?: string;   // (레거시) 전용 채팅 채널 — 사용 안 해도 됨
 
@@ -49,8 +48,6 @@ export interface CmdBotConfig {
 
 /** 채팅 명령어 prefix 설정 */
 export interface CommandsConfig {
-  /** 페르소나 조회 명령어 목록 (기본: ["!페르소나", "!persona"]) */
-  persona: string[];
   /** 도움말 명령어 목록 (기본: ["!도움말", "!help"]) */
   help: string[];
   /**
@@ -139,10 +136,6 @@ export function loadConfig(): AppConfig {
     if (!a.apiKey)       console.warn(`⚠️  agents[${a.id}]: apiKey 없음 — LLM 연동 불가`);
     if (!a.model)        console.warn(`⚠️  agents[${a.id}]: model 없음 — LLM 연동 불가`);
     if (!a.provider)     a.provider = 'anthropic'; // 기본값
-    // personaFile: 상대 경로이면 프로젝트 루트 기준으로 절대 경로 변환
-    a.personaFile = path.isAbsolute(a.personaFile)
-      ? a.personaFile
-      : path.resolve(PROJECT_ROOT, a.personaFile);
 
     // mcpTokens 기본값
     a.mcpTokens = a.mcpTokens ?? {};
@@ -160,7 +153,6 @@ export function loadConfig(): AppConfig {
     channelLimits: raw.channelLimits ?? {},
     githubRepos: raw.githubRepos ?? [],
     commands: {
-      persona:    raw.commands?.persona    ?? ['!페르소나', '!persona'],
       help:       raw.commands?.help       ?? ['!도움말', '!help'],
       task:       raw.commands?.task       ?? ['!목표', '!task'],
       autonomous: raw.commands?.autonomous ?? ['!자율', '!pipeline'],
@@ -174,13 +166,5 @@ export function loadConfig(): AppConfig {
 
 /** config.json에 변경사항을 저장합니다 (Step 14 웹 UI용). */
 export function saveConfig(cfg: AppConfig): void {
-  // 저장 시 personaFile은 프로젝트 루트 기준 상대 경로로 변환
-  const toSave: AppConfig = {
-    ...cfg,
-    agents: cfg.agents.map((a) => ({
-      ...a,
-      personaFile: path.relative(PROJECT_ROOT, a.personaFile),
-    })),
-  };
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(toSave, null, 2), 'utf-8');
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf-8');
 }

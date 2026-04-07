@@ -4,13 +4,11 @@
  * MCP 툴은 mcp.ts에서 동적으로 로드됩니다.
  * 여기서는 MCP와 무관하게 봇 자체가 처리하는 툴만 정의합니다.
  *
- * update_persona    : 설정 채널에서 페르소나 파일 수정 (agent.ts 처리)
  * COMPUTER_USE_TOOLS: Anthropic Computer Use Beta 툴 (computer/bash/str_replace_editor)
  *
  * AnyTool           : 일반 Anthropic.Tool | Beta 컴퓨터유즈 툴 유니온 타입
  *
  * CHAT_TOOLS        : 대화 채널용 (MCP 툴은 mcp.ts에서 동적 추가)
- * CONFIG_TOOLS      : 설정 채널용 (update_persona 포함)
  */
 import type Anthropic from '@anthropic-ai/sdk';
 import { DISPLAY_SIZE } from './computer';
@@ -33,31 +31,6 @@ export const BETA_TOOL_TYPES = new Set([
 ]);
 
 // ── 툴 정의 ───────────────────────────────────────────────
-
-export const UPDATE_PERSONA_TOOL: Anthropic.Tool = {
-  name: 'update_persona',
-  description:
-    '자신의 페르소나 파일을 수정합니다. 설정 채널에서 사용자가 지시한 내용을 반영할 때 사용합니다.',
-  input_schema: {
-    type: 'object' as const,
-    properties: {
-      action: {
-        type: 'string',
-        enum: ['append_rule', 'update_memory', 'replace_section'],
-        description: '수정 유형: append_rule(행동규칙 추가), update_memory(장기기억 추가), replace_section(섹션 교체)',
-      },
-      section: {
-        type: 'string',
-        description: 'replace_section 시 수정할 섹션 이름 (예: "장기 기억")',
-      },
-      content: {
-        type: 'string',
-        description: '추가/수정할 내용',
-      },
-    },
-    required: ['action', 'content'],
-  },
-};
 
 /**
  * Anthropic Computer Use Beta 툴 (2025-01-24 버전)
@@ -121,6 +94,3 @@ export const CLAUDE_CODE_TOOL: Anthropic.Tool = {
 
 /** 대화 채널: 자체 툴 없음 (MCP + Computer Use 툴은 agent.ts에서 동적 추가) */
 export const CHAT_TOOLS: Anthropic.Tool[] = [];
-
-/** 설정 채널: 페르소나 수정만 허용 (MCP / Computer Use 제외) */
-export const CONFIG_TOOLS: Anthropic.Tool[] = [UPDATE_PERSONA_TOOL];
