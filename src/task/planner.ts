@@ -37,8 +37,8 @@ export async function planTasks(goal: string, llm: LLMClient): Promise<TaskInput
     async (_name: string, _input: unknown, _id: string): Promise<string> => '(not used)',
   );
 
-  // 응답에서 JSON 배열 추출
-  const match = text.match(/\[[\s\S]*\]/);
+  // 응답에서 JSON 배열 추출 — [{ 로 시작하는 객체 배열만 매칭 (목표 텍스트의 [ 오매칭 방지)
+  const match = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
   if (!match) {
     throw new Error(`플래너 응답에서 JSON을 찾을 수 없음:\n${text.slice(0, 300)}`);
   }
