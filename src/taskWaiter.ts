@@ -55,3 +55,17 @@ export function reject(key: string, reason: string): boolean {
   entry.reject(new Error(reason));
   return true;
 }
+
+/**
+ * 대기 중인 태스크를 조용히 취소합니다 (타이머만 정리, reject 호출 없음).
+ * delegateTask가 중간에 실패해 resultPromise가 고아(orphaned)가 될 때 사용합니다.
+ * Promise는 참조가 없어지면 GC가 수거하므로 unhandled rejection이 발생하지 않습니다.
+ * @returns 정리된 항목이 있으면 true, 없으면 false
+ */
+export function cancel(key: string): boolean {
+  const entry = waiters.get(key);
+  if (!entry) return false;
+  clearTimeout(entry.timer);
+  waiters.delete(key);
+  return true;
+}

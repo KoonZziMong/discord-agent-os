@@ -309,21 +309,29 @@ export class Agent {
     if (!channel) throw new Error(`채널 접근 불가 (delegateTask): ${channelId}`);
 
     // 대기 등록 먼저 → 메시지 전송 (race condition 방지)
+    // try/finally로 중간 실패 시 고아 Promise 방지 (unhandled rejection 크래시 방지)
     const resultPromise = taskWaiter.register(waiterKey, TIMEOUT_MS);
-    await channel.send(envelope);
-    console.log(`[${this.name}] ➡️  태스크 위임: [${task.id}] ${task.title} → ${task.role}`);
+    try {
+      await channel.send(envelope);
+      console.log(`[${this.name}] ➡️  태스크 위임: [${task.id}] ${task.title} → ${task.role}`);
 
-    const resultText = await resultPromise;
+      const resultText = await resultPromise;
 
-    // 응답이 [AGENT_MSG] TASK_RESULT 형식이면 status 확인
-    const parsed = parseAgentMessage(resultText);
-    if (parsed?.header.type === 'TASK_RESULT') {
-      if (parsed.header.status === 'FAILED' || parsed.header.status === 'BLOCKED') {
-        throw new Error(parsed.body.slice(0, 300) || `태스크 ${parsed.header.status}: ${task.title}`);
+      // 응답이 [AGENT_MSG] TASK_RESULT 형식이면 status 확인
+      const parsed = parseAgentMessage(resultText);
+      if (parsed?.header.type === 'TASK_RESULT') {
+        if (parsed.header.status === 'FAILED' || parsed.header.status === 'BLOCKED') {
+          throw new Error(parsed.body.slice(0, 300) || `태스크 ${parsed.header.status}: ${task.title}`);
+        }
+        return parsed.body || resultText;
       }
-      return parsed.body || resultText;
+      return resultText;
+    } catch (err) {
+      // waiter가 아직 맵에 남아 있으면 타이머를 정리합니다.
+      // (타임아웃 자체가 원인이라면 이미 삭제되어 있으므로 cancel은 no-op)
+      taskWaiter.cancel(waiterKey);
+      throw err;
     }
-    return resultText;
   }
 
   // ── 내부 메서드 ────────────────────────────────────────────
@@ -338,7 +346,9 @@ export class Agent {
     const tools: AnyTool[] = [];
 
     // orchestrator는 claude_code 툴 없음 — 구현은 팀원에게 위임하는 역할
-    if (this.config.role !== 'orchestrator') {
+    // useClaudeCode: false이면 LLM 텍스트 응답으로 대체
+    const useClaudeCode = this.config.useClaudeCode !== false;
+    if (this.config.role !== 'orchestrator' && useClaudeCode) {
       tools.push(CLAUDE_CODE_TOOL);
     }
 
@@ -391,9 +401,11 @@ export class Agent {
       '- Discord가 자동으로 봇 이름을 표시하므로 불필요합니다.\n' +
       (isOrchestrator
         ? '- 오케스트레이터는 도구를 직접 실행하지 않습니다. 모든 실행 작업은 팀원에게 @멘션으로 위임하세요.'
-        : '- 코드 작성·수정·실행·테스트가 필요한 작업은 반드시 claude_code 도구를 사용하세요.\n' +
-          '- claude_code 사용이 불가능하거나 실패한 경우에는 LLM으로 직접 응답하되, ' +
-          '응답 말미에 "[⚠️ claude_code 미사용]" 태그와 함께 사용하지 못한 이유를 간략히 명시하세요.');
+        : this.config.useClaudeCode !== false
+          ? '- 코드 작성·수정·실행·테스트가 필요한 작업은 반드시 claude_code 도구를 사용하세요.\n' +
+            '- claude_code 사용이 불가능하거나 실패한 경우에는 LLM으로 직접 응답하되, ' +
+            '응답 말미에 "[⚠️ claude_code 미사용]" 태그와 함께 사용하지 못한 이유를 간략히 명시하세요.'
+          : '- 코드 작성·수정·실행·테스트 작업은 LLM으로 직접 수행합니다.');
 
     if (mode === 'config') {
       return (

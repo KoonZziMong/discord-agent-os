@@ -32,6 +32,10 @@ export interface AgentConfig {
   // Computer Use 활성화 여부 (macOS + 손쉬운 사용 권한 필요, 기본값 false)
   computerUse?: boolean;
 
+  // claude_code CLI 사용 여부 (Anthropic 구독 필요, 기본값 true)
+  // false로 설정하면 LLM 텍스트 응답으로 대체됩니다.
+  useClaudeCode?: boolean;
+
   // 이 채널(프로젝트)에 연결된 GitHub 레포 (owner/repo 형식, 미설정 시 GitHub 워크플로우 비활성화)
   githubRepo?: string;
 }

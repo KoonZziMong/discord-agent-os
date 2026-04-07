@@ -773,6 +773,13 @@ function openBotPanel(agentId) {
             <span class="toggle-slider"></span>
           </label>
         </div>
+        <div class="toggle-row">
+          <label style="margin:0">claude_code CLI 사용 <span style="color:var(--text-muted);font-size:12px">(Anthropic 구독 필요)</span></label>
+          <label class="toggle">
+            <input type="checkbox" id="f-use-claude-code" ${agent.useClaudeCode !== false ? 'checked' : ''}>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
       </div>
 
       <div class="form-section">
@@ -830,6 +837,7 @@ async function saveBotPanel(agentId) {
       configChannel: val('f-cfg-ch'),
       githubRepo: val('f-github') || undefined,
       computerUse: document.getElementById('f-computer').checked,
+      useClaudeCode: document.getElementById('f-use-claude-code').checked,
       mcpTokens: collectKvList('mcp-list'),
     };
 
