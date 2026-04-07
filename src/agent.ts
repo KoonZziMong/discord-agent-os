@@ -85,52 +85,53 @@ export class Agent {
     const label = `[${this.name}]`;
     const modeTag = mode === 'config' ? '설정' : '대화';
     const toolTag = services.length > 0 ? ` +[${services.join(',')}]` : '';
-    console.log(`${label} ${modeTag}${toolTag} 응답 중... (${message.author.username})`);
     const startedAt = Date.now();
 
-    const stopTyping = keepTyping(channel);
-    try {
-      const systemPrompt = await this.buildSystemPrompt(mode, message.channelId);
-      // 유저 메시지는 router.ts에서 이미 추가됨 → 히스토리에 포함되어 있음
-      const historyMessages = history.getHistory(message.channelId, this.id, false);
-      const tools = mode === 'config' ? CONFIG_TOOLS : this.buildChatTools(services);
+    const MAX_ATTEMPTS = 3; // 최초 1회 + 재시도 최대 2회
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const stopTyping = keepTyping(channel);
+      console.log(`${label} ${modeTag}${toolTag} 응답 중... (${message.author.username})${attempt > 1 ? ` [재시도 ${attempt - 1}]` : ''}`);
+      try {
+        const systemPrompt = await this.buildSystemPrompt(mode, message.channelId);
+        const historyMessages = history.getHistory(message.channelId, this.id, false);
+        const tools = mode === 'config' ? CONFIG_TOOLS : this.buildChatTools(services);
 
-      const { text: responseText, usage } = await this.llm.chat(
-        systemPrompt,
-        historyMessages,
-        tools,
-        (name, input, id) => this.executeTool(name, input, id, message.channelId),
-      );
+        const { text: responseText, usage } = await this.llm.chat(
+          systemPrompt,
+          historyMessages,
+          tools,
+          (name, input, id) => this.executeTool(name, input, id, message.channelId),
+        );
 
-      history.addMessage(message.channelId, {
-        authorId: this.id,
-        authorName: this.name,
-        content: responseText,
-      });
+        history.addMessage(message.channelId, {
+          authorId: this.id,
+          authorName: this.name,
+          content: responseText,
+        });
 
-      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
-      const cacheInfo = usage.cacheRead > 0
-        ? ` | cache read: ${usage.cacheRead.toLocaleString()}`
-        : usage.cacheWrite > 0 ? ` | cache write: ${usage.cacheWrite.toLocaleString()}` : '';
-      console.log(`${label} 완료 (${elapsed}s) 📊 in: ${usage.inputTokens.toLocaleString()} / out: ${usage.outputTokens.toLocaleString()}${cacheInfo}`);
+        const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+        const cacheInfo = usage.cacheRead > 0
+          ? ` | cache read: ${usage.cacheRead.toLocaleString()}`
+          : usage.cacheWrite > 0 ? ` | cache write: ${usage.cacheWrite.toLocaleString()}` : '';
+        console.log(`${label} 완료 (${elapsed}s) 📊 in: ${usage.inputTokens.toLocaleString()} / out: ${usage.outputTokens.toLocaleString()}${cacheInfo}`);
 
-      stopTyping();
-      const usageLine = `-# 📊 in ${usage.inputTokens.toLocaleString()} · out ${usage.outputTokens.toLocaleString()}${usage.cacheRead > 0 ? ' · ⚡캐시' : ''}`;
-      await sendSplit(channel, `${responseText}\n${usageLine}`);
+        stopTyping();
+        const usageLine = `-# 📊 in ${usage.inputTokens.toLocaleString()} · out ${usage.outputTokens.toLocaleString()}${usage.cacheRead > 0 ? ' · ⚡캐시' : ''}`;
+        await sendSplit(channel, `${responseText}\n${usageLine}`);
+        return;
 
-    } catch (err: unknown) {
-      stopTyping();
-      const { message: errMsg, retryAfter } = getErrorMessage(err);
-      console.warn(`${label} 오류: ${err instanceof Error ? err.message.slice(0, 80) : err}`);
-      if (retryAfter) {
-        console.log(`${label} ${retryAfter / 1000}초 후 재시도...`);
-        await delay(retryAfter);
-        try {
-          await this.respond(message, mode, services);
-          return;
-        } catch { /* 재시도도 실패하면 에러 메시지 전송 */ }
+      } catch (err: unknown) {
+        stopTyping();
+        const { message: errMsg, retryAfter } = getErrorMessage(err);
+        console.warn(`${label} 오류: ${err instanceof Error ? err.message.slice(0, 80) : err}`);
+        if (retryAfter && attempt < MAX_ATTEMPTS) {
+          console.log(`${label} ${retryAfter / 1000}초 후 재시도... (${attempt}/${MAX_ATTEMPTS - 1})`);
+          await delay(retryAfter);
+          continue;
+        }
+        await channel.send(errMsg).catch(() => {});
+        return;
       }
-      await channel.send(errMsg).catch(() => {});
     }
   }
 
