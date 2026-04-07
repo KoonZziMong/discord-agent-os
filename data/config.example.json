@@ -17,7 +17,7 @@
   "agents": [
     {
       "id": "BOT_DISCORD_USER_ID",
-      "name": "찌몽",
+      "name": "봇이름",
       "role": "developer",
       "discordToken": "BOT_DISCORD_TOKEN",
       "provider": "anthropic",

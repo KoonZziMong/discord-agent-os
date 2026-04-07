@@ -47,7 +47,7 @@ async function testAnthropic(): Promise<boolean> {
 }
 
 async function testDiscord(): Promise<boolean> {
-  console.log('\n[2/2] Discord Bot 연동 테스트 (찌몽)...');
+  console.log('\n[2/2] Discord Bot 연동 테스트...');
   return new Promise((resolve) => {
     const client = new Client({
       intents: [
@@ -65,7 +65,7 @@ async function testDiscord(): Promise<boolean> {
 
     client.once('clientReady', async (c) => {
       try {
-        const channelId = process.env.CHANNEL_CHAT_ZZIMONG!;
+        const channelId = process.env.TEST_CHANNEL_ID!;
         const channel = await c.channels.fetch(channelId);
 
         if (!channel || !channel.isTextBased()) {
@@ -84,8 +84,8 @@ async function testDiscord(): Promise<boolean> {
           return;
         }
 
-        await channel.send('🤖 [스모크 테스트] 찌몽 봇 연결 성공!');
-        console.log(`✅ Discord Bot OK — ${c.user.tag} 로그인, #대화-찌몽 메시지 전송 완료`);
+        await channel.send('🤖 [스모크 테스트] 봇 연결 성공!');
+        console.log(`✅ Discord Bot OK — ${c.user.tag} 로그인, 메시지 전송 완료`);
         clearTimeout(timeout);
         client.destroy();
         resolve(true);

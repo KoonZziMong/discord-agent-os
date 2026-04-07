@@ -31,7 +31,7 @@
 
 **discord-ai-team** — Discord 위에서 동작하는 멀티 에이전트 AI 오케스트레이션 시스템.
 
-복수의 AI 봇(찌몽/아루/센세 등)이 각자 독립 채널에서 운영되며, 협력 채널에서 Orchestrator 지휘 아래 팀으로 작업합니다. [AGENT_MSG] 봉투 프로토콜로 봇 간 통신하며, turn 한도·rate-limit·루프 감지로 무한 실행을 방지합니다.
+복수의 AI 봇이 각자 독립 채널에서 운영되며, 협력 채널에서 Orchestrator 지휘 아래 팀으로 작업합니다. [AGENT_MSG] 봉투 프로토콜로 봇 간 통신하며, turn 한도·rate-limit·루프 감지로 무한 실행을 방지합니다.
 
 - **레포**: https://github.com/KoonZziMong/discord-agent-os
 - **진입점**: `src/index.ts`

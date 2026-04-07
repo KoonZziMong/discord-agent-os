@@ -7,8 +7,7 @@
  * 수신 시: addMessage()로 리스트에 추가 (limit 초과 시 오래된 것 제거)
  * API 호출 시: getHistory()로 Claude 포맷 변환 반환
  *
- * 설정 채널은 히스토리 불필요 → loadFromDiscord() 호출 안 함
- * → addMessage() 호출 시 채널이 없으면 자동으로 무시됩니다.
+ * loadFromDiscord() 호출 없이 addMessage()를 호출하면 자동으로 무시됩니다.
  */
 import type { TextChannel } from 'discord.js';
 

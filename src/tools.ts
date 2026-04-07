@@ -8,7 +8,7 @@
  *
  * AnyTool           : 일반 Anthropic.Tool | Beta 컴퓨터유즈 툴 유니온 타입
  *
- * CHAT_TOOLS        : 대화 채널용 (MCP 툴은 mcp.ts에서 동적 추가)
+ * CHAT_TOOLS        : 채팅용 (MCP 툴은 mcp.ts에서 동적 추가)
  */
 import type Anthropic from '@anthropic-ai/sdk';
 import { DISPLAY_SIZE } from './computer';
@@ -92,5 +92,5 @@ export const CLAUDE_CODE_TOOL: Anthropic.Tool = {
 
 // ── 채널별 툴 세트 ─────────────────────────────────────────
 
-/** 대화 채널: 자체 툴 없음 (MCP + Computer Use 툴은 agent.ts에서 동적 추가) */
+/** 채팅: 자체 툴 없음 (MCP + Computer Use 툴은 agent.ts에서 동적 추가) */
 export const CHAT_TOOLS: Anthropic.Tool[] = [];

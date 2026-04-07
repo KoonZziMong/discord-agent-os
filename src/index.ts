@@ -7,7 +7,7 @@
  *  [3] Agent 인스턴스 × 3 생성 (각자 LLMClient + AgentMCPManager 보유)
  *  [4] 봇별 MCP 서버 초기화 (병렬)
  *  [5] 전체 봇 동시 로그인 + ready 대기
- *  [6] 채널별 대화 히스토리 로드 (Discord API, 설정 채널 제외)
+ *  [6] 채널별 대화 히스토리 로드 (Discord API)
  *  [7] messageCreate 이벤트 → router 연결 (AI 봇만)
  *  [8] interactionCreate → CmdBot 전담 처리
  *  [9] Graceful shutdown 핸들러 등록
