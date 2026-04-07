@@ -49,7 +49,7 @@ export async function planTasks(goal: string, llm: LLMClient): Promise<TaskInput
   console.log(`[planner] LLM 응답 전체:\n${text}`);
   const match = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
   if (!match) {
-    throw new Error(`플래너 응답에서 JSON을 찾을 수 없음:\n${text.slice(0, 500)}`);
+    throw new Error(`플래너 응답에서 JSON을 찾을 수 없음:\n${text}`);
   }
 
   const raw = JSON.parse(match[0]) as Array<{
