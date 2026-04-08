@@ -149,8 +149,8 @@ export function getErrorMessage(err: unknown): { message: string; retryAfter?: n
     if (msg.includes('401') || msg.includes('invalid_api_key')) {
       return { message: '❌ API 키가 유효하지 않습니다. 관리자에게 문의하세요.' };
     }
-    // 일시적 서버 오류(502/503/504)만 재시도
-    if (msg.match(/5[02-9]\d/) || msg.includes('502') || msg.includes('503') || msg.includes('504')) {
+    // 일시적 서버 오류(502/503/504/529) 및 과부하 오류 재시도
+    if (msg.match(/5[02-9]\d/) || msg.includes('502') || msg.includes('503') || msg.includes('504') || msg.includes('529') || msg.toLowerCase().includes('overloaded')) {
       return { message: '⚠️ AI 서버에 일시적인 문제가 있습니다. 잠시 후 다시 시도할게요.', retryAfter: 3000 };
     }
     return { message: `❌ 오류가 발생했습니다: ${msg.slice(0, 100)}` };
