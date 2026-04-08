@@ -34,6 +34,7 @@ import { getRoleContent } from './roleContext';
 import { runRetrospective } from './retrospective';
 import { serializeAgentMessage, parseAgentMessage } from './agentProtocol';
 import * as taskWaiter from './taskWaiter';
+import { createForumChannel, createGoalThread, appendToThread, FORUM_CHANNEL_NAME } from './forum';
 
 export class Agent {
   readonly id: string;
@@ -183,6 +184,25 @@ export class Agent {
     try {
       await channel.send(`🤔 **목표 분석 중...**\n> ${goal}`);
 
+      // 포럼 채널에 목표 thread 생성
+      let goalThread: import('discord.js').ThreadChannel | null = null;
+      try {
+        const guild = this.botClient.guilds.cache.first();
+        if (guild) {
+          const forumChannel = await createForumChannel(guild, { name: FORUM_CHANNEL_NAME });
+          goalThread = await createGoalThread(forumChannel, {
+            goalSummary: goal.slice(0, 100),
+            goalDetail: goal,
+            startedAt: new Date(),
+            requestedBy: message.author.username,
+          });
+          await channel.send(`📌 목표 추적 thread 생성됨: ${goalThread.url}`);
+        }
+      } catch (err) {
+        // 포럼 thread 생성 실패 시 작업은 계속 진행
+        console.warn('[forum] thread 생성 실패 (무시):', err instanceof Error ? err.message : err);
+      }
+
       // 1. LLM으로 태스크 분해
       const taskInputs = await planTasks(goal, this.llm);
 
@@ -196,6 +216,16 @@ export class Agent {
         channel,
         (task) => this.executeTask(task, graph, message.channelId),
       );
+
+      // 결과를 포럼 thread에 append
+      if (goalThread) {
+        try {
+          const status = graph.isComplete() ? '✅ 완료' : '❌ 실패';
+          await appendToThread(goalThread, `## ${status}\n\n목표 수행이 완료되었습니다.\n> ${goal}`);
+        } catch (err) {
+          console.warn('[forum] thread append 실패 (무시):', err instanceof Error ? err.message : err);
+        }
+      }
 
       // 4. 회고 — 사이클 완료 후 이슈 분석 및 역할 핀 개선 제안 (Phase 1: 유저 컨펌)
       if (graph.isComplete() || graph.hasFailed()) {
