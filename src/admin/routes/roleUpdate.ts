@@ -21,7 +21,6 @@
 import { Router } from 'express';
 import type { Client, TextChannel } from 'discord.js';
 import type { Agent } from '../../agent';
-import { invalidateRoleCache } from '../../roleContext';
 import { refreshPins } from '../../channelContext';
 
 export function createRoleUpdateRouter(agents: Agent[], clients: Client[]): Router {
@@ -68,10 +67,7 @@ export function createRoleUpdateRouter(agents: Agent[], clients: Client[]): Rout
       await newMsg.pin();
       console.log(`[roleUpdate] 새 핀 등록 완료 (msgId: ${newMsg.id})`);
 
-      // roleContext 캐시 무효화 → 다음 LLM 호출 시 새 내용 반영
-      invalidateRoleCache(roleChannelId);
-
-      // channelContext 핀 캐시도 갱신
+      // channelContext 핀 캐시 갱신 → 다음 LLM 호출 시 새 내용 반영
       await refreshPins(channel).catch(() => {});
 
       res.json({

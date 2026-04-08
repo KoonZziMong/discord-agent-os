@@ -21,7 +21,7 @@ import { createLLMClient, type LLMClient, type ToolResultContent } from './llm';
 import { AgentMCPManager } from './mcp';
 import { computerAction, executeBash, executeTextEditor } from './computer';
 import * as history from './history';
-import { getChannelContext, buildContextBlock } from './channelContext';
+import { getContextItems } from './channelContext';
 import { CHAT_TOOLS, COMPUTER_USE_TOOLS, CLAUDE_CODE_TOOL, type AnyTool } from './tools';
 import { runClaudeCode, hasClaudeCodeSession } from './claude-code';
 import { sendSplit, getErrorMessage, delay, keepTyping } from './utils';
@@ -394,16 +394,23 @@ export class Agent {
   }
 
   private async buildSystemPrompt(channelId?: string): Promise<string> {
-    const base = `당신은 ${this.name}입니다.`;
+    const base = `당신은 ${this.name}입니다. (Discord ID: <@${this.id}>, 역할: ${this.config.role ?? '없음'})`;
 
-    // 채널 토픽 + 핀 메시지 컨텍스트
-    const channelCtxBlock = channelId
-      ? buildContextBlock(getChannelContext(channelId), this.id)
+    // 팀원 목록 (자신 제외)
+    const teammates = this.appCfg.agents.filter((a) => a.id !== this.id);
+    const teamBlock = teammates.length > 0
+      ? '\n\n---\n## 팀원\n' +
+        teammates.map((a) => `- ${a.name} (역할: ${a.role ?? '없음'}, 멘션: <@${a.id}>)`).join('\n')
       : '';
 
-    // 역할 채널 컨텍스트
-    // - 채널 핀에 역할 설정 있으면 해당 역할 채널 내용 주입 (여러 역할이면 모두 누적)
-    // - 채널 핀에 역할 설정 없으면 config.role 디폴트 역할 채널 내용 폴백
+    // 현재 채널 컨텍스트 (토픽 + 핀)
+    const channelItems = channelId ? getContextItems(channelId, this.id) : [];
+    const channelCtxBlock = channelItems.length > 0
+      ? '\n\n---\n## 채널 컨텍스트\n' + channelItems.join('\n\n---\n\n')
+      : '';
+
+    // 역할 컨텍스트 (rule → 글로벌 역할 → 프로젝트 role 채널)
+    const isOrchestrator = this.config.role === 'orchestrator';
     let roleBlock = '';
     if (channelId) {
       const guild = this.botClient.guilds.cache.first() ?? null;
@@ -413,13 +420,12 @@ export class Agent {
         channelId,
         this.config.role,
         guild ?? undefined,
+        isOrchestrator,
       );
       if (roleContent) {
         roleBlock = '\n\n---\n## 나의 역할\n' + roleContent;
       }
     }
-
-    const isOrchestrator = this.config.role === 'orchestrator';
     const common =
       '\n\n---\n' +
       '## 응답 규칙\n' +
@@ -433,7 +439,7 @@ export class Agent {
             '응답 말미에 "[⚠️ claude_code 미사용]" 태그와 함께 사용하지 못한 이유를 간략히 명시하세요.'
           : '- 코드 작성·수정·실행·테스트 작업은 LLM으로 직접 수행합니다.');
 
-    return base + channelCtxBlock + roleBlock + common;
+    return base + teamBlock + channelCtxBlock + roleBlock + common;
   }
 
   /**

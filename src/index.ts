@@ -21,7 +21,7 @@ import { Agent } from './agent';
 import { createRouter } from './router';
 import { loadFromDiscord } from './history';
 import { loadChannelContext, updateTopic, refreshPins } from './channelContext';
-import { invalidateRoleCache, invalidateRoleChannelIdCache, parseAgentRole, getRoleChannelId } from './roleContext';
+import { invalidateRoleChannelIdCache, parseAgentRole, getRoleChannelId } from './roleContext';
 import { TaskGraph } from './task/graph';
 import { loadIncompleteGraphs } from './task/store';
 import { startAdminServer } from './admin/server';
@@ -75,8 +75,7 @@ async function applyOrRejectProposal(
       const newMsg = await roleChannel.send(proposal.newContent);
       await newMsg.pin();
 
-      // 캐시 무효화
-      invalidateRoleCache(proposal.roleChannelId);
+      // channelContext 핀 캐시 갱신
       await refreshPins(roleChannel).catch(() => {});
 
       deleteProposal(proposal.proposalId);
@@ -285,8 +284,6 @@ async function main(): Promise<void> {
 
   primaryClient.on(Events.ChannelPinsUpdate, (channel) => {
     if (channel instanceof BaseGuildTextChannel) {
-      // 채널 핀 갱신 + 이 채널이 역할 채널로 캐시된 경우 무효화
-      invalidateRoleCache(channel.id);
       refreshPins(channel as TextChannel).catch(() => {});
     }
   });
