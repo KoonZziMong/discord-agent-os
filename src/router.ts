@@ -4,10 +4,9 @@
  * 라우팅 규칙:
  *   1. 봇 메시지:
  *      - [AGENT_MSG] 봉투를 가진 알려진 에이전트 봇 메시지 → 하네스 라우팅
- *      - 그 외 봇 메시지 → 무시
- *   2. 협력 채널 (유저 메시지) → collaboration.handle() 호출
- *   3. 그 외 채널 (유저 메시지) → 멘션된 봇만 응답 (@에이전트 멘션 기반)
- *   4. 명령어(!도움말) → AI 호출 없이 즉시 응답
+ *      - 그 외 봇 메시지 → 멘션된 봇들에게 병렬 전달
+ *   2. 유저 메시지 → @멘션된 봇만 응답 (모든 채널 동일)
+ *   3. 명령어(!도움말) → AI 호출 없이 즉시 응답
  *
  * 하네스 라우팅:
  *   - [AGENT_MSG] 헤더의 `to` 필드로 대상 에이전트를 결정
@@ -18,7 +17,6 @@
 import { Message, Client, TextChannel } from 'discord.js';
 import type { Agent } from './agent';
 import type { AppConfig } from './config';
-import { handle as handleCollab } from './collaboration';
 import { sendSplit } from './utils';
 import * as history from './history';
 import { loadChannelContext, getChannelContext } from './channelContext';
@@ -212,9 +210,9 @@ async function handleHarnessMessage(
   }
 
   // 에이전트가 봉투 메시지를 이해할 수 있도록 body를 전달
-  // respondInCollab은 히스토리 기반으로 응답 → 봉투 포함 전체 메시지가 히스토리에 있음
+  // respondInChannel은 히스토리 기반으로 응답 → 봉투 포함 전체 메시지가 히스토리에 있음
   try {
-    const responseText = await targetAgent.respondInCollab(channelId);
+    const responseText = await targetAgent.respondInChannel(channelId);
     history.addMessage(channelId, {
       authorId: targetAgent.id,
       authorName: targetAgent.name,
@@ -289,7 +287,7 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
             const agentCh = await agent.botClient.channels.fetch(chId).catch(() => null) as TextChannel | null;
             if (!agentCh) return;
             try {
-              const responseText = await agent.respondInCollab(chId);
+              const responseText = await agent.respondInChannel(chId);
               history.addMessage(chId, {
                 authorId: agent.id,
                 authorName: agent.name,
@@ -311,20 +309,7 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
 
     const channelId = message.channelId;
 
-    // ── 협력 채널 (유저 메시지) ─────────────────────────────
-    if (channelId === appCfg.collabChannel) {
-      if (sourceClient.user?.id !== primaryClient.user?.id) return;
-      history.addMessage(channelId, {
-        authorId: message.author.id,
-        authorName: message.member?.displayName ?? message.author.username,
-        content: message.content,
-      });
-      const services = extractToolServices(message, appCfg.toolBots);
-      await handleCollab(message, agents, appCfg.collabChannel, services);
-      return;
-    }
-
-    // ── 그 외 채널 (유저 메시지) ────────────────────────────
+    // ── 유저 메시지 — @멘션 기반 라우팅 (모든 채널 동일) ────
     const mentionedAgent = agents.find(
       (a) => a.botClient === sourceClient && message.mentions.users.has(a.id),
     );

@@ -61,7 +61,6 @@ export interface AppConfig {
   agents: AgentConfig[];
   /** 슬래시 커맨드 전담 봇 설정 (없으면 커맨드 비활성화) */
   cmdBot?: CmdBotConfig;
-  collabChannel: string;
   /** Discord 서버(길드) ID — 관리 웹 UI에서 채널/봇 목록 조회에 사용 */
   guildId?: string;
   adminPort: number;
@@ -113,7 +112,6 @@ export function loadConfig(): AppConfig {
   }
 
   // 필수 필드 검증
-  if (!raw.collabChannel) throw new Error('config.json: collabChannel 누락');
   if (!Array.isArray(raw.agents) || raw.agents.length === 0) {
     throw new Error('config.json: agents 배열 누락');
   }
@@ -134,7 +132,6 @@ export function loadConfig(): AppConfig {
   }
 
   return {
-    collabChannel: raw.collabChannel,
     guildId: raw.guildId,
     adminPort: raw.adminPort ?? 3000,
     adminHost: raw.adminHost,

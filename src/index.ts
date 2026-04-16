@@ -19,9 +19,8 @@ import * as path from 'path';
 import { loadConfig, type AppConfig } from './config';
 import { Agent } from './agent';
 import { createRouter } from './router';
-import { loadFromDiscord } from './history';
 import { loadChannelContext, updateTopic, refreshPins } from './channelContext';
-import { invalidateRoleChannelIdCache, parseAgentRole, getRoleChannelId } from './roleContext';
+import { getRoleChannelId } from './roleContext';
 import { TaskGraph } from './task/graph';
 import { loadIncompleteGraphs } from './task/store';
 import { startAdminServer } from './admin/server';
@@ -162,52 +161,6 @@ async function main(): Promise<void> {
     ...(appCfg.cmdBot ? [cmdClient!.login(appCfg.cmdBot.discordToken)] : []),
   ]);
   await Promise.all([...readyPromises, cmdReadyPromise]);
-
-  // [6] 채널별 히스토리 로드 (협력 채널)
-  //     모든 봇이 전 채널 보기 권한을 가지므로 primaryClient로 통일합니다.
-  const getLimit = (channelId: string) =>
-    appCfg.channelLimits[channelId] ?? appCfg.historyLimit;
-
-  const historyChannels: string[] = [appCfg.collabChannel];
-
-  console.log('📂 히스토리 + 채널 컨텍스트 로드 중...');
-  await Promise.allSettled(
-    historyChannels.map(async (channelId) => {
-      try {
-        const channel = await primaryClient.channels.fetch(channelId) as TextChannel;
-        await loadFromDiscord(channel, getLimit(channelId));
-        await loadChannelContext(channel);
-      } catch (err: unknown) {
-        console.warn(
-          `⚠️  채널 로드 실패 (${channelId}):`,
-          err instanceof Error ? err.message : err,
-        );
-      }
-    }),
-  );
-
-  // 협력 채널 핀에서 각 봇의 하네스 역할(역할: xxx) 자동 감지 → agent.config.role 주입
-  if (appCfg.collabChannel) {
-    try {
-      const collabCh = await primaryClient.channels.fetch(appCfg.collabChannel) as TextChannel;
-      const pinned = await collabCh.messages.fetchPinned();
-      for (const agent of agents) {
-        const botPin = [...pinned.values()].find((m) => {
-          const first = m.content.trimStart().match(/^<@!?(\d+)>/);
-          return first && first[1] === agent.id;
-        });
-        if (botPin) {
-          const role = parseAgentRole(botPin.content);
-          if (role) {
-            agent.config.role = role;
-            console.log(`🎭 ${agent.name} 역할 감지: ${role}`);
-          }
-        }
-      }
-    } catch (err: unknown) {
-      console.warn('⚠️  봇 역할 감지 실패:', err instanceof Error ? err.message : err);
-    }
-  }
 
   // '역할' 카테고리 채널 핀을 channelContext 캐시에 로드
   // (회고 분석 시 역할 채널 내용을 빠르게 참조할 수 있도록)

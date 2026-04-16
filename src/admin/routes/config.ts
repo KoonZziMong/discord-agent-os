@@ -4,7 +4,7 @@
  * GET  /api/config          전체 설정 반환 (토큰은 마스킹)
  * PUT  /api/config          전체 설정 저장 + 가능한 항목 즉시 반영
  * GET  /api/config/raw      토큰 포함 원본 반환 (패널에서 편집 시 사용)
- * PUT  /api/config/system   시스템 설정만 갱신 (collabChannel, historyLimit 등)
+ * PUT  /api/config/system   시스템 설정만 갱신 (historyLimit, maxTurnsPerCycle 등)
  * PUT  /api/agents/:id      단일 에이전트 설정 갱신 + 즉시 반영
  */
 
