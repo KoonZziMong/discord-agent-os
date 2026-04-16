@@ -318,6 +318,24 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
     // ── Gemma 라우팅 — 멘션 없는 메시지 처리 ──────────────────
     // primaryClient(agents[0])의 세션에서만 1회 호출합니다.
     if (!mentionedAgent) {
+      // 디버그 커맨드: !젬마컨텍스트 → 마지막 classify 프롬프트 전문 출력
+      if (
+        message.content.trim() === '!젬마컨텍스트' &&
+        cmdClient &&
+        sourceClient.user?.id === agents[0]?.botClient.user?.id
+      ) {
+        const ch = await cmdClient.channels.fetch(channelId).catch(() => null) as TextChannel | null;
+        if (ch) {
+          const lastPrompt = gemmaRouter.getLastBuiltPrompt();
+          if (lastPrompt) {
+            await sendSplit(ch, `\`\`\`\n${lastPrompt}\n\`\`\``);
+          } else {
+            await ch.send('-# 아직 Gemma classify가 한 번도 실행되지 않았습니다.');
+          }
+        }
+        return;
+      }
+
       if (
         appCfg.gemmaRouting?.enabled &&
         sourceClient.user?.id === agents[0]?.botClient.user?.id

@@ -49,6 +49,14 @@ const RECHECK_INTERVAL_MS = 60_000;
 /** 마지막으로 파싱된 gemmaName 캐시 (오류 시 표시용) */
 let _cachedGemmaName = DEFAULT_GEMMA_NAME;
 
+/** 마지막으로 빌드된 classify 프롬프트 전문 (디버그용) */
+let _lastBuiltPrompt: string | null = null;
+
+/** 마지막으로 빌드된 프롬프트를 반환합니다 (디버그 커맨드용) */
+export function getLastBuiltPrompt(): string | null {
+  return _lastBuiltPrompt;
+}
+
 export async function isAvailable(cfg: GemmaRoutingConfig): Promise<boolean> {
   const now = Date.now();
   if (_available !== null && now - _lastCheck < RECHECK_INTERVAL_MS) {
@@ -160,14 +168,19 @@ async function buildClassifyPrompt(
     if (ruleChannelId) {
       await ensureLoaded(client, ruleChannelId);
       const ruleCtx = getChannelContext(ruleChannelId);
+      console.log(`[GemmaRouter] rule 채널(${ruleChannelId}) 핀 수: ${ruleCtx.pins.length}`);
       const gemmaPin = ruleCtx.pins.find((p) => p.trimStart().startsWith('[GEMMA_ROUTER]'));
       if (gemmaPin) {
         const parsed = parseGemmaPin(gemmaPin);
         gemmaName = parsed.name;
-        _cachedGemmaName = gemmaName; // 오류 시 표시용 캐시 갱신
+        _cachedGemmaName = gemmaName;
         if (parsed.rules) routingRules = parsed.rules;
-        console.log(`[GemmaRouter] rule 채널 커스텀 규칙 적용 (name: ${gemmaName})`);
+        console.log(`[GemmaRouter] [GEMMA_ROUTER] 핀 적용 (name: ${gemmaName})`);
+      } else {
+        console.warn(`[GemmaRouter] rule 채널에 [GEMMA_ROUTER] 핀 없음 → 디폴트 규칙 사용`);
       }
+    } else {
+      console.warn(`[GemmaRouter] rule 채널 ID 없음 → 디폴트 규칙 사용`);
     }
   }
 
@@ -198,6 +211,7 @@ async function buildClassifyPrompt(
     '{"targets": [], "reason": "타겟 미선택 이유"}',
   ].join('\n');
 
+  _lastBuiltPrompt = prompt;
   return { prompt, gemmaName, routingRules, botList, historyBlock };
 }
 
