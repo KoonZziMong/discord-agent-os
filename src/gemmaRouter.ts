@@ -21,9 +21,19 @@
 import { Message } from 'discord.js';
 import type { Agent } from './agent';
 import type { AppConfig, GemmaRoutingConfig } from './config';
-import { getChannelContext } from './channelContext';
-import { getRoleContent } from './roleContext';
+import { getChannelContext, ensureLoaded } from './channelContext';
+import { getRoleContent, getRoleChannelId } from './roleContext';
 import * as history from './history';
+
+// ── 기본 라우팅 규칙 (rule 채널에 [GEMMA_ROUTER] 핀이 없을 때 사용) ──
+const DEFAULT_ROUTING_RULES = [
+  '규칙 (우선순위 순):',
+  '1. 봇 이름을 직접 호칭하거나 언급한 경우 (예: "찌몽아", "아루야", "찌몽이", "아루한테") → 해당 봇을 반드시 포함합니다. 업무와 무관한 잡담, 게임, 농담이라도 포함합니다.',
+  '2. 여러 봇의 이름이 언급된 경우 → 언급된 봇 모두 포함합니다.',
+  '3. 특정 이름 없이 역할 관련 요청인 경우 (예: "코드 리뷰해줘", "개발해줘") → 해당 역할의 봇을 선택합니다.',
+  '4. 모든 봇에게 해당하는 인사, 공지, 출석 체크 등 → 전체를 선택합니다.',
+  '5. 봇 이름/역할 언급이 전혀 없고 봇과 완전히 무관한 내용 → 빈 배열을 반환합니다.',
+].join('\n');
 
 // ── 가용성 체크 ──────────────────────────────────────────────
 
@@ -119,6 +129,24 @@ async function buildClassifyPrompt(
   // ── 봇 목록 (응답 형식 안내용) ──
   const botList = agents.map((a) => `"${a.name}"`).join(', ');
 
+  // ── rule 채널에서 [GEMMA_ROUTER] 핀 조회 ──
+  // ROLE 카테고리의 'rule' 채널 핀 중 [GEMMA_ROUTER]로 시작하는 것을 라우팅 규칙으로 사용합니다.
+  // 없으면 DEFAULT_ROUTING_RULES를 사용합니다.
+  let routingRules = DEFAULT_ROUTING_RULES;
+  if (guild && client) {
+    const ruleChannelId = getRoleChannelId(guild, 'rule');
+    if (ruleChannelId) {
+      await ensureLoaded(client, ruleChannelId);
+      const ruleCtx = getChannelContext(ruleChannelId);
+      const gemmaPin = ruleCtx.pins.find((p) => p.trimStart().startsWith('[GEMMA_ROUTER]'));
+      if (gemmaPin) {
+        // [GEMMA_ROUTER] 첫 줄 제거 후 본문만 추출
+        routingRules = gemmaPin.trimStart().replace(/^\[GEMMA_ROUTER\][^\n]*\n?/, '').trim();
+        console.log('[GemmaRouter] rule 채널 커스텀 규칙 적용');
+      }
+    }
+  }
+
   return [
     '당신은 Discord 멀티봇 시스템의 라우터입니다.',
     '아래 정보를 바탕으로 새 메시지에 응답해야 할 봇을 결정하세요.',
@@ -137,12 +165,7 @@ async function buildClassifyPrompt(
     '',
     '━━ 지시사항 ━━',
     `응답 가능한 봇: ${botList}`,
-    '규칙 (우선순위 순):',
-    '1. 봇 이름을 직접 호칭하거나 언급한 경우 (예: "찌몽아", "아루야", "찌몽이", "아루한테") → 해당 봇을 반드시 포함합니다. 업무와 무관한 잡담, 게임, 농담이라도 포함합니다.',
-    '2. 여러 봇의 이름이 언급된 경우 → 언급된 봇 모두 포함합니다.',
-    '3. 특정 이름 없이 역할 관련 요청인 경우 (예: "코드 리뷰해줘", "개발해줘") → 해당 역할의 봇을 선택합니다.',
-    '4. 모든 봇에게 해당하는 인사, 공지, 출석 체크 등 → 전체를 선택합니다.',
-    '5. 봇 이름/역할 언급이 전혀 없고 봇과 완전히 무관한 내용 → 빈 배열을 반환합니다.',
+    routingRules,
     '',
     '반드시 아래 JSON 형식만 출력하세요. 설명 없이 JSON만:',
     '{"targets": ["봇이름1", "봇이름2"]}',
