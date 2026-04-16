@@ -90,7 +90,66 @@ export const CLAUDE_CODE_TOOL: Anthropic.Tool = {
   },
 };
 
+// ── Goals 포럼 툴 ──────────────────────────────────────────
+
+/** goals 포럼 채널에 새 목표 thread를 생성합니다. (orchestrator 전용) */
+export const CREATE_GOAL_THREAD_TOOL: Anthropic.Tool = {
+  name: 'create_goal_thread',
+  description:
+    '현재 채널의 카테고리에 있는 goals 포럼 채널에 새 목표 thread를 생성합니다. ' +
+    '목표 수행 시작 시점에 호출하여 반환된 threadId를 [AGENT_MSG] goalThreadId 필드로 팀원에게 전달하세요.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      goalSummary: {
+        type: 'string',
+        description: '목표 한 줄 요약 (thread 제목으로 사용, 최대 90자)',
+      },
+      goalDetail: {
+        type: 'string',
+        description: '목표 상세 내용',
+      },
+      requestedBy: {
+        type: 'string',
+        description: '요청자 이름 또는 Discord 멘션 (선택)',
+      },
+    },
+    required: ['goalSummary', 'goalDetail'],
+  },
+};
+
+/** goals 포럼 thread에 진행 상황을 추가(append)합니다. */
+export const POST_TO_GOAL_THREAD_TOOL: Anthropic.Tool = {
+  name: 'post_to_goal_thread',
+  description:
+    'goals 포럼 thread에 작업 진행 상황을 메시지로 추가합니다. ' +
+    '태스크 시작, 완료, 실패, 에스컬레이션 등 각 이벤트마다 호출하세요. ' +
+    'status를 지정하면 thread 태그가 함께 변경됩니다.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      threadId: {
+        type: 'string',
+        description: 'goals thread ID ([AGENT_MSG] goalThreadId 필드 값)',
+      },
+      content: {
+        type: 'string',
+        description: 'thread에 추가할 내용 (마크다운 지원)',
+      },
+      status: {
+        type: 'string',
+        enum: ['진행중', '완료', '실패', '보류'],
+        description: '지정 시 thread 태그를 해당 상태로 변경합니다 (선택)',
+      },
+    },
+    required: ['threadId', 'content'],
+  },
+};
+
 // ── 채널별 툴 세트 ─────────────────────────────────────────
 
-/** 채팅: 자체 툴 없음 (MCP + Computer Use 툴은 agent.ts에서 동적 추가) */
-export const CHAT_TOOLS: Anthropic.Tool[] = [];
+/** 채팅: Goals 포럼 툴 포함 (MCP + Computer Use 툴은 agent.ts에서 동적 추가) */
+export const CHAT_TOOLS: Anthropic.Tool[] = [
+  CREATE_GOAL_THREAD_TOOL,
+  POST_TO_GOAL_THREAD_TOOL,
+];

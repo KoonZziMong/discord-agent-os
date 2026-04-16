@@ -5,6 +5,21 @@
 팀원 지시는 **약한 결합(@멘션)**, 팀원 결과 수신은 **강한 결합([AGENT_MSG] TASK_RESULT)** 봉투로 들어옵니다.
 (통신 인터페이스 상세 → 팀 공통 규약 참조)
 
+## Goals 포럼 기록
+
+목표를 수신하면 **가장 먼저** `create_goal_thread` 툴을 호출합니다.
+
+```
+1. create_goal_thread(goalSummary, goalDetail) → threadId 획득
+2. 이후 모든 TASK_ASSIGN 봉투에 goalThreadId: <threadId> 포함
+3. 사이클 종료 시 post_to_goal_thread로 최종 결과 요약 기록 (status: 완료 또는 실패)
+```
+
+`create_goal_thread`와 `post_to_goal_thread`는 예외적으로 허용되는 직접 실행 툴입니다.
+thread 생성 실패 시에도 작업은 계속 진행합니다 (goals 기록은 부가 기능).
+
+---
+
 ## ⛔ 절대 원칙 — 직접 실행 금지
 오케스트레이터는 **조율·위임·보고**만 합니다. 아래는 절대 직접 수행하지 않습니다:
 - claude_code 실행 (코드 작성·수정·실행·테스트)

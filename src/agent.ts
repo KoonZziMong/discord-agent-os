@@ -583,6 +583,50 @@ export class Agent {
       return executeTextEditor(toolInput as Parameters<typeof executeTextEditor>[0]);
     }
 
+    // ── Goals 포럼 툴 ─────────────────────────────────────────
+
+    if (toolName === 'create_goal_thread') {
+      const { goalSummary, goalDetail, requestedBy } = toolInput as {
+        goalSummary: string;
+        goalDetail: string;
+        requestedBy?: string;
+      };
+      const guild = this.botClient.guilds.cache.first();
+      if (!guild) return '오류: 서버를 찾을 수 없습니다.';
+
+      const ch = channelId ? await this.botClient.channels.fetch(channelId).catch(() => null) : null;
+      const categoryId = (ch && 'parentId' in ch ? ch.parentId : null) ?? undefined;
+
+      const forumChannel = await createForumChannel(guild, { name: FORUM_CHANNEL_NAME, categoryId });
+      const thread = await createGoalThread(forumChannel, {
+        goalSummary: goalSummary.slice(0, 100),
+        goalDetail,
+        startedAt: new Date(),
+        requestedBy,
+      });
+      return `goals thread 생성 완료\nthreadId: ${thread.id}\nurl: ${thread.url}`;
+    }
+
+    if (toolName === 'post_to_goal_thread') {
+      const { threadId, content, status } = toolInput as {
+        threadId: string;
+        content: string;
+        status?: '진행중' | '완료' | '실패' | '보류';
+      };
+      const thread = await this.botClient.channels.fetch(threadId).catch(() => null) as ThreadChannel | null;
+      if (!thread) return `오류: thread(${threadId})를 찾을 수 없습니다.`;
+
+      await appendToThread(thread, content);
+
+      if (status) {
+        const parent = thread.parent;
+        if (parent && parent.type === 15 /* GuildForum */) {
+          await setGoalThreadStatus(thread, parent as ForumChannel, status);
+        }
+      }
+      return `thread 기록 완료${status ? ` (상태: ${status})` : ''}`;
+    }
+
     return this.mcpManager.callMcpTool(toolName, toolInput);
   }
 }
