@@ -15,7 +15,7 @@
  *   - router.ts에서 @툴봇 멘션을 파싱하여 services를 결정합니다.
  */
 
-import { Client, Message, TextChannel, ThreadChannel } from 'discord.js';
+import { Client, Message, TextChannel, ThreadChannel, type ForumChannel } from 'discord.js';
 import type { AgentConfig, AppConfig } from './config';
 import { createLLMClient, type LLMClient, type ToolResultContent } from './llm';
 import { AgentMCPManager } from './mcp';
@@ -34,7 +34,7 @@ import { getRoleContent } from './roleContext';
 import { runRetrospective } from './retrospective';
 import { serializeAgentMessage, parseAgentMessage } from './agentProtocol';
 import * as taskWaiter from './taskWaiter';
-import { createForumChannel, createGoalThread, appendToThread, FORUM_CHANNEL_NAME } from './forum';
+import { createForumChannel, createGoalThread, appendToThread, setGoalThreadStatus, nowKST, FORUM_CHANNEL_NAME } from './forum';
 
 export class Agent {
   readonly id: string;
@@ -189,13 +189,14 @@ export class Agent {
 
       // (a) 포럼 채널에 목표 thread 생성 — 목표 수신 즉시 실행
       let goalThread: ThreadChannel | null = null;
+      let goalForumChannel: ForumChannel | null = null;
       try {
         const guild = this.botClient.guilds.cache.first();
         if (guild) {
           // 현재 채널의 카테고리 안에서 goals 포럼 채널을 찾거나 생성
           const categoryId = channel.parentId ?? undefined;
-          const forumChannel = await createForumChannel(guild, { name: FORUM_CHANNEL_NAME, categoryId });
-          goalThread = await createGoalThread(forumChannel, {
+          goalForumChannel = await createForumChannel(guild, { name: FORUM_CHANNEL_NAME, categoryId });
+          goalThread = await createGoalThread(goalForumChannel, {
             goalSummary: goal.slice(0, 100),
             goalDetail: goal,
             startedAt: new Date(),
@@ -218,6 +219,24 @@ export class Agent {
       // (d) threadId를 목표 실행 컨텍스트(goalThreads Map)에 유지
       if (goalThread) {
         this.goalThreads.set(graph.data.id, goalThread);
+
+        // thread 제목에 goalId 앞 8자 추가
+        const shortId = graph.data.id.slice(0, 8);
+        goalThread.edit({ name: `[${shortId}] ${goal.slice(0, 89)}` }).catch((e: unknown) => {
+          console.warn('[forum] thread 제목 업데이트 실패:', e instanceof Error ? e.message : e);
+        });
+
+        // 작업 계획 체크리스트 append
+        const planMsg = [
+          '## 📋 작업 계획',
+          '',
+          ...taskInputs.map((t) => `- [ ] **[${t.id}]** ${t.title} → \`${t.role}\``),
+          '',
+          `_graphId: \`${graph.data.id}\` | 총 ${taskInputs.length}개 태스크_`,
+        ].join('\n');
+        appendToThread(goalThread, planMsg).catch((e: unknown) => {
+          console.warn('[forum] 작업 계획 append 실패:', e instanceof Error ? e.message : e);
+        });
       }
 
       // 3. 순차 실행 — (b) 각 태스크 시작·완료·실패 시 thread에 진행 상황 append
@@ -229,7 +248,7 @@ export class Agent {
           if (goalThread) {
             await appendToThread(
               goalThread,
-              `⚙️ **[${task.id}] ${task.title}** 시작 중...`,
+              `### ⚙️ 태스크 시작\n**[${task.id}]** ${task.title}\n_${nowKST()}_`,
             ).catch((e: unknown) => {
               console.warn('[forum] thread append 실패:', e instanceof Error ? e.message : e);
             });
@@ -242,7 +261,7 @@ export class Agent {
             if (goalThread) {
               await appendToThread(
                 goalThread,
-                `✅ **[${task.id}] ${task.title}** 완료\n\`\`\`\n${result.slice(0, 300)}\n\`\`\``,
+                `### ✅ 태스크 완료 · _${nowKST()}_\n**[${task.id}]** ${task.title}\n\`\`\`\n${result.slice(0, 300)}\n\`\`\``,
               ).catch((e: unknown) => {
                 console.warn('[forum] thread append 실패:', e instanceof Error ? e.message : e);
               });
@@ -255,7 +274,7 @@ export class Agent {
               const errMsg = err instanceof Error ? err.message : String(err);
               await appendToThread(
                 goalThread,
-                `❌ **[${task.id}] ${task.title}** 실패\n\`\`\`\n${errMsg.slice(0, 200)}\n\`\`\``,
+                `### ❌ 태스크 실패 · _${nowKST()}_\n**[${task.id}]** ${task.title}\n\`\`\`\n${errMsg.slice(0, 200)}\n\`\`\``,
               ).catch((e: unknown) => {
                 console.warn('[forum] thread append 실패:', e instanceof Error ? e.message : e);
               });
@@ -265,30 +284,38 @@ export class Agent {
         },
       );
 
-      // (c) 목표 완료 시 결과 및 산출물 요약을 thread에 최종 기재
+      // (c) 목표 완료 시 결과 및 산출물 요약을 thread에 최종 기재 + 태그 전환
       if (goalThread) {
         try {
           const isSuccess = graph.isComplete();
           const statusLabel = isSuccess ? '✅ 완료' : '❌ 실패';
-          const completedTasks = graph.data.tasks
-            .filter((t) => t.status === 'completed')
-            .map((t) => `- **[${t.id}]** ${t.title}: ${(t.result ?? '').slice(0, 150)}`)
+          const completedCount = graph.data.tasks.filter((t) => t.status === 'completed').length;
+          const taskSummary = graph.data.tasks
+            .map((t) => {
+              const icon = t.status === 'completed' ? '✅' : t.status === 'failed' ? '❌' : '⏸️';
+              return `- ${icon} **[${t.id}]** ${t.title}${t.result ? `: ${t.result.slice(0, 100)}` : ''}`;
+            })
             .join('\n');
 
           await appendToThread(
             goalThread,
             [
-              `## ${statusLabel} 최종 결과`,
+              `## 🏁 사이클 종료 — ${statusLabel}`,
+              `_${nowKST()}_`,
               '',
               `> ${goal}`,
               '',
-              '### 완료된 태스크',
-              completedTasks || '(없음)',
+              '### 태스크 결과',
+              taskSummary || '(없음)',
               '',
-              `_총 ${graph.data.tasks.length}개 태스크 중 ` +
-              `${graph.data.tasks.filter((t) => t.status === 'completed').length}개 완료_`,
+              `_총 ${graph.data.tasks.length}개 태스크 중 ${completedCount}개 완료_`,
             ].join('\n'),
           );
+
+          // 태그 상태 전환 (진행중 → 완료 or 실패)
+          if (goalForumChannel) {
+            await setGoalThreadStatus(goalThread, goalForumChannel, isSuccess ? '완료' : '실패');
+          }
         } catch (err) {
           console.warn('[forum] thread 최종 append 실패 (무시):', err instanceof Error ? err.message : err);
         }

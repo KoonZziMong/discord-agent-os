@@ -179,6 +179,44 @@ export async function findGoalThread(
   return (archived.threads.get(threadId) as ThreadChannel) ?? null;
 }
 
+/**
+ * 포럼 thread의 상태 태그를 변경합니다.
+ * 기존 태그는 모두 제거되고 지정한 상태 태그만 적용됩니다.
+ *
+ * 필요 권한: ManageThreads
+ */
+export async function setGoalThreadStatus(
+  thread: ThreadChannel,
+  forumChannel: ForumChannel,
+  status: '진행중' | '완료' | '실패' | '보류',
+): Promise<void> {
+  const tagNameMap: Record<string, string> = {
+    '진행중': '🔵 진행중',
+    '완료': '✅ 완료',
+    '실패': '❌ 실패',
+    '보류': '⏸️ 보류',
+  };
+  const tag = forumChannel.availableTags.find((t) => t.name === tagNameMap[status]);
+  if (!tag) return;
+  await thread.setAppliedTags([tag.id]);
+}
+
+/**
+ * 현재 시각을 한국어 짧은 포맷으로 반환합니다.
+ * 예: 04.16. 14:30:00
+ */
+export function nowKST(): string {
+  return new Date().toLocaleString('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Seoul',
+  });
+}
+
 // ── 내부 유틸 ────────────────────────────────────────────────────────────────
 
 /** 목표 게시물 본문 메시지 생성 */
