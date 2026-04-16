@@ -182,7 +182,7 @@ async function handleHarnessMessage(
   }
 
   // 대상 에이전트 찾기
-  const targetAgent = agents.find((a) => (a.config.role ?? a.id) === header.to);
+  const targetAgent = agents.find((a) => a.config.role === header.to || a.id === header.to);
   if (!targetAgent) {
     console.warn(`[하네스] 대상 에이전트 없음 (to: ${header.to})`);
     return;
@@ -322,30 +322,31 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
     }
 
     const trimmed = message.content.trim();
+    // @멘션을 제거하고 공백을 정리한 텍스트 (prefix 체크용)
+    // "@찌몽 !목표 goal" → "!목표 goal", "!목표 @찌몽 goal" → "!목표 goal"
+    const stripped = trimmed.replace(/<@!?\d+>/g, '').trim();
     const cmds = appCfg.commands;
 
-    if (cmds.help.includes(trimmed)) {
+    if (cmds.help.includes(stripped)) {
       await handleHelpCommand(mentionedAgent, message, appCfg);
       return;
     }
 
-    // !목표 / !task → Task Graph 생성 (T1/T2/T3 계획 표시) 후 팀 위임 실행
-    // 오케스트레이터는 claude_code 툴이 없으므로 직접 실행 불가 → 팀원 @멘션으로 위임
-    // (단독 에이전트 대화 응답이 필요하면 그냥 @멘션 대화 사용)
-    const taskPrefix = cmds.task.find((p) => trimmed.startsWith(p + ' '));
+    // !목표 / !task → Task Graph 생성 후 팀 위임 실행
+    // "@찌몽 !목표 goal" / "!목표 @찌몽 goal" 두 형식 모두 지원
+    const taskPrefix = cmds.task.find((p) => stripped.startsWith(p + ' '));
     if (taskPrefix) {
-      // Discord 봇 멘션(<@id>) 제거 — 목표 텍스트가 상태 메시지로 echo될 때 재라우팅 방지
-      const goal = trimmed.slice(taskPrefix.length).trim().replace(/<@!?\d+>/g, '').trim();
+      const goal = stripped.slice(taskPrefix.length).trim();
       if (goal) {
         await mentionedAgent.startTaskGraph(message, goal);
         return;
       }
     }
 
-    // !자율 / !pipeline → 단독 에이전트 자동 파이프라인 (내부 planner→developer→reviewer→tester)
-    const autonomousPrefix = cmds.autonomous?.find((p) => trimmed.startsWith(p + ' '));
+    // !자율 / !pipeline → 단독 에이전트 자동 파이프라인
+    const autonomousPrefix = cmds.autonomous?.find((p) => stripped.startsWith(p + ' '));
     if (autonomousPrefix) {
-      const goal = trimmed.slice(autonomousPrefix.length).trim().replace(/<@!?\d+>/g, '').trim();
+      const goal = stripped.slice(autonomousPrefix.length).trim();
       if (goal) {
         await mentionedAgent.startTaskGraph(message, goal);
         return;
