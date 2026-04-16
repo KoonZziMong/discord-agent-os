@@ -24,7 +24,7 @@ import type { LLMClient } from './llm';
 import type { TaskGraphData } from './task/types';
 import { ROLE_UPDATE_PROPOSAL_SENTINEL } from './agentProtocol';
 import { saveProposal } from './roleProposals';
-import { fetchRoleContent } from './roleContext';
+import { ensureLoaded, getChannelContext } from './channelContext';
 
 // 24시간 (ms)
 const PROPOSAL_TTL = 24 * 60 * 60 * 1000;
@@ -118,7 +118,8 @@ async function loadChannelContent(
   client: Client,
   channelId: string,
 ): Promise<{ content: string; size: number; overBudget: boolean }> {
-  const content = await fetchRoleContent(client, channelId);
+  await ensureLoaded(client, channelId);
+  const content = getChannelContext(channelId).pins.join('\n\n---\n\n');
   const size = content.length;
   return { content, size, overBudget: size > ROLE_CONTENT_SOFT_BUDGET };
 }

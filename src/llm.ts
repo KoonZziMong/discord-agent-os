@@ -100,7 +100,10 @@ class AnthropicClient implements LLMClient {
 
     let lastUsage: ChatUsage = { inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 };
 
-    for (let round = 0; round < 10; round++) {
+    const ADVISORY_INTERVAL = 10; // N 라운드마다 점검 조언 주입
+    const MAX_ROUNDS = 100;
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
       // ── API 호출 ──
       const betas: Anthropic.AnthropicBeta[] = useBeta
         ? [...COMPUTER_USE_BETAS, 'prompt-caching-2024-07-31']
@@ -150,9 +153,28 @@ class AnthropicClient implements LLMClient {
         content: response.content as Anthropic.Beta.BetaContentBlockParam[],
       });
       msgBuffer.push({ role: 'user', content: toolResults });
+
+      // ── 라운드 점검 조언 주입 ──
+      const isLastRound = round + 1 === MAX_ROUNDS;
+      if (isLastRound) {
+        msgBuffer.push({
+          role: 'user',
+          content:
+            `[시스템] 툴 호출이 ${MAX_ROUNDS}회에 도달했습니다. 이번이 마지막 기회입니다. ` +
+            `지금 바로 작업 결과를 텍스트로 보고해 주세요. 이후 세션이 종료됩니다.`,
+        });
+      } else if ((round + 1) % ADVISORY_INTERVAL === 0) {
+        msgBuffer.push({
+          role: 'user',
+          content:
+            `[시스템] 툴 호출이 ${round + 1}회 진행되었습니다. ` +
+            `의도된 작업이라면 계속 진행하세요. ` +
+            `루프나 오류가 의심된다면 지금 상태를 점검하고 텍스트로 보고해 주세요.`,
+        });
+      }
     }
 
-    return { text: '(툴 실행 횟수 초과)', usage: lastUsage };
+    return { text: `(툴 실행 ${MAX_ROUNDS}회 초과 — 작업이 완료되지 않았습니다)`, usage: lastUsage };
   }
 }
 
@@ -190,7 +212,10 @@ class OpenAICompatClient implements LLMClient {
       ...messages.map((m) => ({ role: m.role, content: m.content } as OpenAI.ChatCompletionMessageParam)),
     ];
 
-    for (let round = 0; round < 10; round++) {
+    const ADVISORY_INTERVAL = 10;
+    const MAX_ROUNDS = 100;
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
       const response = await this.client.chat.completions.create({
         model: this.model,
         messages: msgBuffer,
@@ -222,9 +247,28 @@ class OpenAICompatClient implements LLMClient {
         const content = Array.isArray(result) ? '[이미지 결과 — OpenAI 호환 모드 미지원]' : result;
         msgBuffer.push({ role: 'tool', tool_call_id: toolCall.id, content });
       }
+
+      // ── 라운드 점검 조언 주입 ──
+      const isLastRound = round + 1 === MAX_ROUNDS;
+      if (isLastRound) {
+        msgBuffer.push({
+          role: 'user',
+          content:
+            `[시스템] 툴 호출이 ${MAX_ROUNDS}회에 도달했습니다. 이번이 마지막 기회입니다. ` +
+            `지금 바로 작업 결과를 텍스트로 보고해 주세요. 이후 세션이 종료됩니다.`,
+        });
+      } else if ((round + 1) % ADVISORY_INTERVAL === 0) {
+        msgBuffer.push({
+          role: 'user',
+          content:
+            `[시스템] 툴 호출이 ${round + 1}회 진행되었습니다. ` +
+            `의도된 작업이라면 계속 진행하세요. ` +
+            `루프나 오류가 의심된다면 지금 상태를 점검하고 텍스트로 보고해 주세요.`,
+        });
+      }
     }
 
-    return { text: '(툴 실행 횟수 초과)', usage: { inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 } };
+    return { text: `(툴 실행 ${MAX_ROUNDS}회 초과 — 작업이 완료되지 않았습니다)`, usage: { inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 } };
   }
 }
 

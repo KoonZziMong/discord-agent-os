@@ -15,13 +15,13 @@
  *   - router.ts에서 @툴봇 멘션을 파싱하여 services를 결정합니다.
  */
 
-import { Client, Message, TextChannel } from 'discord.js';
+import { Client, Message, TextChannel, ThreadChannel } from 'discord.js';
 import type { AgentConfig, AppConfig } from './config';
 import { createLLMClient, type LLMClient, type ToolResultContent } from './llm';
 import { AgentMCPManager } from './mcp';
 import { computerAction, executeBash, executeTextEditor } from './computer';
 import * as history from './history';
-import { getChannelContext, buildContextBlock } from './channelContext';
+import { getContextItems } from './channelContext';
 import { CHAT_TOOLS, COMPUTER_USE_TOOLS, CLAUDE_CODE_TOOL, type AnyTool } from './tools';
 import { runClaudeCode, hasClaudeCodeSession } from './claude-code';
 import { sendSplit, getErrorMessage, delay, keepTyping } from './utils';
@@ -34,6 +34,7 @@ import { getRoleContent } from './roleContext';
 import { runRetrospective } from './retrospective';
 import { serializeAgentMessage, parseAgentMessage } from './agentProtocol';
 import * as taskWaiter from './taskWaiter';
+import { createForumChannel, createGoalThread, appendToThread, FORUM_CHANNEL_NAME } from './forum';
 
 export class Agent {
   readonly id: string;
@@ -44,6 +45,9 @@ export class Agent {
 
   private llm: LLMClient;
   readonly mcpManager: AgentMCPManager;
+
+  /** 목표별 포럼 thread 저장 (graphId → ThreadChannel) */
+  private goalThreads = new Map<string, ThreadChannel>();
 
   constructor(cfg: AgentConfig, botClient: Client, appCfg: AppConfig) {
     this.id = cfg.id;
@@ -183,6 +187,27 @@ export class Agent {
     try {
       await channel.send(`🤔 **목표 분석 중...**\n> ${goal}`);
 
+      // (a) 포럼 채널에 목표 thread 생성 — 목표 수신 즉시 실행
+      let goalThread: ThreadChannel | null = null;
+      try {
+        const guild = this.botClient.guilds.cache.first();
+        if (guild) {
+          // 현재 채널의 카테고리 안에서 goals 포럼 채널을 찾거나 생성
+          const categoryId = channel.parentId ?? undefined;
+          const forumChannel = await createForumChannel(guild, { name: FORUM_CHANNEL_NAME, categoryId });
+          goalThread = await createGoalThread(forumChannel, {
+            goalSummary: goal.slice(0, 100),
+            goalDetail: goal,
+            startedAt: new Date(),
+            requestedBy: message.author.username,
+          });
+          await channel.send(`📌 목표 추적 thread 생성됨: ${goalThread.url}`);
+        }
+      } catch (err) {
+        // 포럼 thread 생성 실패 시 작업은 계속 진행
+        console.warn('[forum] thread 생성 실패 (무시):', err instanceof Error ? err.message : err);
+      }
+
       // 1. LLM으로 태스크 분해
       const taskInputs = await planTasks(goal, this.llm);
 
@@ -190,12 +215,87 @@ export class Agent {
       const graph = TaskGraph.create(goal, message.channelId, this.id, taskInputs);
       console.log(`[${this.name}] 태스크 그래프 생성: ${graph.data.id} (${taskInputs.length}개)`);
 
-      // 3. 순차 실행
+      // (d) threadId를 목표 실행 컨텍스트(goalThreads Map)에 유지
+      if (goalThread) {
+        this.goalThreads.set(graph.data.id, goalThread);
+      }
+
+      // 3. 순차 실행 — (b) 각 태스크 시작·완료·실패 시 thread에 진행 상황 append
       await runTaskGraph(
         graph,
         channel,
-        (task) => this.executeTask(task, graph, message.channelId),
+        async (task) => {
+          // 태스크 시작 알림
+          if (goalThread) {
+            await appendToThread(
+              goalThread,
+              `⚙️ **[${task.id}] ${task.title}** 시작 중...`,
+            ).catch((e: unknown) => {
+              console.warn('[forum] thread append 실패:', e instanceof Error ? e.message : e);
+            });
+          }
+
+          try {
+            const result = await this.executeTask(task, graph, message.channelId);
+
+            // 태스크 완료 결과 기록
+            if (goalThread) {
+              await appendToThread(
+                goalThread,
+                `✅ **[${task.id}] ${task.title}** 완료\n\`\`\`\n${result.slice(0, 300)}\n\`\`\``,
+              ).catch((e: unknown) => {
+                console.warn('[forum] thread append 실패:', e instanceof Error ? e.message : e);
+              });
+            }
+
+            return result;
+          } catch (err: unknown) {
+            // 태스크 실패 내용 기록
+            if (goalThread) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              await appendToThread(
+                goalThread,
+                `❌ **[${task.id}] ${task.title}** 실패\n\`\`\`\n${errMsg.slice(0, 200)}\n\`\`\``,
+              ).catch((e: unknown) => {
+                console.warn('[forum] thread append 실패:', e instanceof Error ? e.message : e);
+              });
+            }
+            throw err;
+          }
+        },
       );
+
+      // (c) 목표 완료 시 결과 및 산출물 요약을 thread에 최종 기재
+      if (goalThread) {
+        try {
+          const isSuccess = graph.isComplete();
+          const statusLabel = isSuccess ? '✅ 완료' : '❌ 실패';
+          const completedTasks = graph.data.tasks
+            .filter((t) => t.status === 'completed')
+            .map((t) => `- **[${t.id}]** ${t.title}: ${(t.result ?? '').slice(0, 150)}`)
+            .join('\n');
+
+          await appendToThread(
+            goalThread,
+            [
+              `## ${statusLabel} 최종 결과`,
+              '',
+              `> ${goal}`,
+              '',
+              '### 완료된 태스크',
+              completedTasks || '(없음)',
+              '',
+              `_총 ${graph.data.tasks.length}개 태스크 중 ` +
+              `${graph.data.tasks.filter((t) => t.status === 'completed').length}개 완료_`,
+            ].join('\n'),
+          );
+        } catch (err) {
+          console.warn('[forum] thread 최종 append 실패 (무시):', err instanceof Error ? err.message : err);
+        }
+
+        // 실행 완료 후 컨텍스트에서 제거
+        this.goalThreads.delete(graph.data.id);
+      }
 
       // 4. 회고 — 사이클 완료 후 이슈 분석 및 역할 핀 개선 제안 (Phase 1: 유저 컨펌)
       if (graph.isComplete() || graph.hasFailed()) {
@@ -364,16 +464,23 @@ export class Agent {
   }
 
   private async buildSystemPrompt(channelId?: string): Promise<string> {
-    const base = `당신은 ${this.name}입니다.`;
+    const base = `당신은 ${this.name}입니다. (Discord ID: <@${this.id}>, 역할: ${this.config.role ?? '없음'})`;
 
-    // 채널 토픽 + 핀 메시지 컨텍스트
-    const channelCtxBlock = channelId
-      ? buildContextBlock(getChannelContext(channelId), this.id)
+    // 팀원 목록 (자신 제외)
+    const teammates = this.appCfg.agents.filter((a) => a.id !== this.id);
+    const teamBlock = teammates.length > 0
+      ? '\n\n---\n## 팀원\n' +
+        teammates.map((a) => `- ${a.name} (역할: ${a.role ?? '없음'}, 멘션: <@${a.id}>)`).join('\n')
       : '';
 
-    // 역할 채널 컨텍스트
-    // - 채널 핀에 역할 설정 있으면 해당 역할 채널 내용 주입 (여러 역할이면 모두 누적)
-    // - 채널 핀에 역할 설정 없으면 config.role 디폴트 역할 채널 내용 폴백
+    // 현재 채널 컨텍스트 (토픽 + 핀)
+    const channelItems = channelId ? getContextItems(channelId, this.id) : [];
+    const channelCtxBlock = channelItems.length > 0
+      ? '\n\n---\n## 채널 컨텍스트\n' + channelItems.join('\n\n---\n\n')
+      : '';
+
+    // 역할 컨텍스트 (rule → 글로벌 역할 → 프로젝트 role 채널)
+    const isOrchestrator = this.config.role === 'orchestrator';
     let roleBlock = '';
     if (channelId) {
       const guild = this.botClient.guilds.cache.first() ?? null;
@@ -383,13 +490,12 @@ export class Agent {
         channelId,
         this.config.role,
         guild ?? undefined,
+        isOrchestrator,
       );
       if (roleContent) {
         roleBlock = '\n\n---\n## 나의 역할\n' + roleContent;
       }
     }
-
-    const isOrchestrator = this.config.role === 'orchestrator';
     const common =
       '\n\n---\n' +
       '## 응답 규칙\n' +
@@ -403,7 +509,7 @@ export class Agent {
             '응답 말미에 "[⚠️ claude_code 미사용]" 태그와 함께 사용하지 못한 이유를 간략히 명시하세요.'
           : '- 코드 작성·수정·실행·테스트 작업은 LLM으로 직접 수행합니다.');
 
-    return base + channelCtxBlock + roleBlock + common;
+    return base + teamBlock + channelCtxBlock + roleBlock + common;
   }
 
   /**

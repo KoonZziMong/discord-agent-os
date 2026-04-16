@@ -14,7 +14,7 @@
  *   - 이벤트 갱신 : updateTopic(), refreshPins()
  */
 
-import type { TextChannel } from 'discord.js';
+import type { Client, TextChannel } from 'discord.js';
 
 export interface ChannelContext {
   topic: string;       // 채널 토픽 (없으면 빈 문자열)
@@ -98,39 +98,54 @@ function getPinTargetId(pin: string): string | null {
 }
 
 /**
- * 컨텍스트를 system prompt에 주입할 텍스트로 변환합니다.
+ * 채널의 토픽과 핀에서 이 봇에게 관련된 컨텍스트 항목을 배열로 반환합니다.
  *
- * @param ctx      채널 컨텍스트 (토픽 + 핀 목록)
- * @param botId    이 봇의 Discord user ID — 봇 전용 핀 필터링에 사용
- *                 멘션 없는 핀(공통)은 항상 포함됩니다.
+ * - 토픽: 있으면 첫 번째 항목으로 포함
+ * - 멘션 없는 핀: 항상 포함 (공통)
+ * - <@botId> 핀: 포함 (멘션 첫 줄 + 역할 메타 라인 제거)
+ * - 다른 봇 멘션 핀: 제외
+ *
+ * 모든 채널(현재 채널, role 채널, rule 채널 등)에 동일하게 적용됩니다.
  */
-export function buildContextBlock(ctx: ChannelContext, botId?: string): string {
-  const parts: string[] = [];
+export function getContextItems(channelId: string, botId: string): string[] {
+  const ctx = getChannelContext(channelId);
+  const items: string[] = [];
 
   if (ctx.topic) {
-    parts.push(`## 채널 중요 정보\n${ctx.topic}`);
+    items.push(ctx.topic);
   }
 
-  // 이 봇에게 해당하는 핀만 필터링
-  // - 멘션 없는 핀 → 공통, 항상 포함
-  // - <@botId>로 시작하는 핀 → 해당 봇에게만 포함
-  const relevantPins = ctx.pins.filter((pin) => {
+  for (const pin of ctx.pins) {
     const targetId = getPinTargetId(pin);
-    if (!targetId) return true;           // 공통
-    return botId ? targetId === botId : false; // 봇 전용
-  });
-
-  if (relevantPins.length > 0) {
-    // 봇 전용 핀은 멘션 첫 줄을 제거하고 내용만 전달
-    const cleaned = relevantPins.map((pin) => {
-      const targetId = getPinTargetId(pin);
-      if (!targetId) return pin;
-      return pin.trimStart().replace(/^<@!?\d+>\s*/, '');
-    });
-    parts.push(`## 채널 지시사항\n${cleaned.join('\n\n---\n\n')}`);
+    if (!targetId) {
+      items.push(pin);
+    } else if (targetId === botId) {
+      // 멘션 첫 줄과 역할 메타 라인(역할:, 역할채널:) 제거
+      const content = pin.trimStart()
+        .replace(/^<@!?\d+>\s*\n?/, '')
+        .split('\n')
+        .filter((line) => !line.match(/^역할(채널)?:/))
+        .join('\n')
+        .trim();
+      if (content) items.push(content);
+    }
   }
 
-  if (parts.length === 0) return '';
+  return items;
+}
 
-  return '\n\n---\n' + parts.join('\n\n');
+/**
+ * 채널이 캐시에 없으면 Discord API에서 로드합니다. (lazy load)
+ * 이미 캐시된 경우 즉시 반환합니다.
+ */
+export async function ensureLoaded(client: Client, channelId: string): Promise<void> {
+  if (cache.has(channelId)) return;
+  try {
+    const channel = await client.channels.fetch(channelId) as TextChannel;
+    if (channel && 'messages' in channel) {
+      await loadChannelContext(channel);
+    }
+  } catch {
+    cache.set(channelId, { topic: '', pins: [] });
+  }
 }
