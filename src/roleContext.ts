@@ -178,7 +178,8 @@ export async function getRoleContent(
     const ruleChannelId = getRoleChannelId(guild, 'rule');
     if (ruleChannelId) {
       await ensureLoaded(client, ruleChannelId);
-      const items = getContextItems(ruleChannelId, botId);
+      const items = getContextItems(ruleChannelId, botId)
+        .filter((item) => !item.trimStart().startsWith('[GEMMA_ROUTER]'));
       if (items.length > 0) sections.push(`## 팀 공통 규칙\n${items.join('\n\n---\n\n')}`);
     }
   }
