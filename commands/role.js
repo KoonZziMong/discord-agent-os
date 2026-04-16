@@ -68,36 +68,30 @@ function splitContent(content, maxLen = 1990) {
 }
 
 /**
- * 섹션 경계 인식 분할 — [SECTION_NAME] 으로 시작하는 섹션은 항상 별도 청크로 분리합니다.
- * 섹션 분리 후 각 파트에 splitContent를 적용하여 2000자 한도도 준수합니다.
- *
- * 예: rule.md 내 [GEMMA_ROUTER] 섹션 → 독립된 핀으로 등록
+ * rule 채널에 추가로 등록할 보조 파일 목록
+ * (각 파일은 data/roles/ 디렉토리에 위치, 없으면 스킵)
  */
-function splitContentSectionAware(content, maxLen = 1990) {
-  // [대문자_영문] 패턴으로 시작하는 줄을 섹션 경계로 인식
-  const sectionPattern = /^(\[GEMMA_ROUTER\][^\n]*)/m;
-  const parts = content.split(sectionPattern);
-  // split으로 캡처 그룹이 포함되어 [앞내용, 구분자, 뒷내용, ...] 형태로 나옴
-  const sections = [];
-  let i = 0;
-  while (i < parts.length) {
-    if (parts[i].match(/^\[GEMMA_ROUTER\]/)) {
-      // 구분자(섹션 헤더) + 다음 내용 합치기
-      const body = (parts[i + 1] ?? '').trimEnd();
-      sections.push((parts[i] + body).trim());
-      i += 2;
-    } else {
-      const trimmed = parts[i].trim();
-      if (trimmed) sections.push(trimmed);
-      i += 1;
+const RULE_EXTRA_FILES = ['gemma_router'];
+
+/**
+ * rule 채널 전용 보조 파일들을 핀으로 등록합니다.
+ * RULE_EXTRA_FILES에 나열된 파일을 순서대로 읽어 청크 분할 후 핀 고정합니다.
+ * 파일이 없으면 해당 항목은 스킵합니다.
+ */
+async function registerRuleExtraPins(channel) {
+  for (const name of RULE_EXTRA_FILES) {
+    let content;
+    try {
+      content = loadRoleContent(name);
+    } catch {
+      continue; // 파일 없으면 스킵
+    }
+    const chunks = splitContent(content);
+    for (const chunk of chunks) {
+      const msg = await channel.send(chunk);
+      await msg.pin();
     }
   }
-  // 각 섹션을 추가로 splitContent 처리
-  const result = [];
-  for (const section of sections) {
-    result.push(...splitContent(section, maxLen));
-  }
-  return result.filter((s) => s.length > 0);
 }
 
 // ── 역할 채널 정의 ─────────────────────────────────────────────
@@ -212,13 +206,14 @@ async function handleInit(interaction) {
       });
 
       // 역할 내용 핀 (2000자 초과 시 청크 분할)
-      const chunks = role.name === 'rule'
-        ? splitContentSectionAware(loadRoleContent(role.name))
-        : splitContent(loadRoleContent(role.name));
+      const chunks = splitContent(loadRoleContent(role.name));
       for (const chunk of chunks) {
         const msg = await channel.send(chunk);
         await msg.pin();
       }
+
+      // rule 채널 전용 보조 파일 핀 등록 (gemma_router.md 등)
+      if (role.name === 'rule') await registerRuleExtraPins(channel);
 
       // CmdBot 디폴트 봇 핀 (미설정 상태로 초기화)
       const cmdBotId = loadCmdBotId(interaction);
@@ -296,13 +291,12 @@ async function handleReset(interaction) {
           parent: category.id,
           topic: role.description,
         });
-        const chunks = role.name === 'rule'
-        ? splitContentSectionAware(loadRoleContent(role.name))
-        : splitContent(loadRoleContent(role.name));
+        const chunks = splitContent(loadRoleContent(role.name));
         for (const chunk of chunks) {
           const msg = await channel.send(chunk);
           await msg.pin();
         }
+        if (role.name === 'rule') await registerRuleExtraPins(channel);
         log.push(`  ✅ #${role.name} — 채널 생성 + 핀 등록 완료`);
         continue;
       }
@@ -319,13 +313,12 @@ async function handleReset(interaction) {
       }
 
       // 최신 기본값으로 새 메시지 작성 + 핀 고정 (2000자 초과 시 청크 분할)
-      const chunks = role.name === 'rule'
-        ? splitContentSectionAware(loadRoleContent(role.name))
-        : splitContent(loadRoleContent(role.name));
+      const chunks = splitContent(loadRoleContent(role.name));
       for (const chunk of chunks) {
         const newMsg = await textChannel.send(chunk);
         await newMsg.pin();
       }
+      if (role.name === 'rule') await registerRuleExtraPins(textChannel);
 
       log.push(`  ✅ #${role.name} — 핀 교체 완료 (기존 ${rolePins.length}개 언핀)`);
     }
