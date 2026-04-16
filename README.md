@@ -6,6 +6,8 @@
 
 *Planner → Developer → Reviewer → Tester 파이프라인을 Discord 채널에서 실행*
 
+*각 에이전트는 [AGENT_MSG] 프로토콜로 통신하며, 채널 핀 메시지로 역할 컨텍스트를 동적 주입받아 채널 단위로 독립 운영됩니다*
+
 <br/>
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white)
