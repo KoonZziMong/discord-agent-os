@@ -192,7 +192,9 @@ export class Agent {
       try {
         const guild = this.botClient.guilds.cache.first();
         if (guild) {
-          const forumChannel = await createForumChannel(guild, { name: FORUM_CHANNEL_NAME });
+          // 현재 채널의 카테고리 안에서 goals 포럼 채널을 찾거나 생성
+          const categoryId = channel.parentId ?? undefined;
+          const forumChannel = await createForumChannel(guild, { name: FORUM_CHANNEL_NAME, categoryId });
           goalThread = await createGoalThread(forumChannel, {
             goalSummary: goal.slice(0, 100),
             goalDetail: goal,

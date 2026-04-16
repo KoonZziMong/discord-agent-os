@@ -60,9 +60,12 @@ export async function createForumChannel(
   const channelName = options.name ?? FORUM_CHANNEL_NAME;
   const topic = options.topic ?? '목표(Goal) 추적 및 작업 문서화 채널입니다.';
 
-  // 이미 존재하는 포럼 채널 확인
+  // 이미 존재하는 포럼 채널 확인 (categoryId가 있으면 해당 카테고리 내에서만 탐색)
   const existing = guild.channels.cache.find(
-    (ch) => ch.type === ChannelType.GuildForum && ch.name === channelName,
+    (ch) =>
+      ch.type === ChannelType.GuildForum &&
+      ch.name === channelName &&
+      (options.categoryId ? ch.parentId === options.categoryId : true),
   ) as ForumChannel | undefined;
   if (existing) return existing;
 
