@@ -6,6 +6,13 @@
   "maxCycleMinutes": 30,
   "maxReviewRetries": 2,
   "autonomousRoleUpdates": false,
+  "gemmaRouting": {
+    "enabled": false,
+    "endpoint": "http://localhost:8080/v1",
+    "model": "mlx-community/gemma-4-e4b-it-4bit",
+    "timeoutMs": 8000,
+    "historyLimit": 10
+  },
   "toolBots": {},
   "channelLimits": {},
   "commands": {

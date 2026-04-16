@@ -33,6 +33,7 @@ import {
 } from './agentProtocol';
 import type { CycleState } from './agentProtocol';
 import * as taskWaiter from './taskWaiter';
+import * as gemmaRouter from './gemmaRouter';
 
 // ── 사이클 상태 인메모리 저장 ──────────────────────────────────
 
@@ -313,7 +314,42 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
     const mentionedAgent = agents.find(
       (a) => a.botClient === sourceClient && message.mentions.users.has(a.id),
     );
-    if (!mentionedAgent) return;
+
+    // ── Gemma 라우팅 — 멘션 없는 메시지 처리 ──────────────────
+    // primaryClient(agents[0])의 세션에서만 1회 호출합니다.
+    if (!mentionedAgent) {
+      if (
+        appCfg.gemmaRouting?.enabled &&
+        sourceClient.user?.id === agents[0]?.botClient.user?.id
+      ) {
+        const targets = await gemmaRouter.classify(message, agents, appCfg);
+        if (targets && targets.length > 0) {
+          // 히스토리에 유저 메시지 추가
+          history.addMessage(channelId, {
+            authorId: message.author.id,
+            authorName: message.member?.displayName ?? message.author.username,
+            content: message.content,
+          });
+
+          const services = extractToolServices(message, appCfg.toolBots);
+
+          // 선택된 봇들 병렬 응답 (각자의 botClient로 전송)
+          await Promise.all(targets.map(async (agent) => {
+            const agentCh = await agent.botClient.channels
+              .fetch(channelId)
+              .catch(() => null) as TextChannel | null;
+            if (!agentCh) return;
+            try {
+              await agent.respond(message, services);
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.error(`[GemmaRouter] ${agent.name} 응답 오류: ${msg}`);
+            }
+          }));
+        }
+      }
+      return;
+    }
 
     // 처음 방문하는 채널이면 채널 컨텍스트 자동 로드
     const ctx = getChannelContext(channelId);

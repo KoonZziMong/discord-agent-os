@@ -57,6 +57,23 @@ export interface CommandsConfig {
   autonomous: string[];
 }
 
+/** Gemma4 로컬 라우터 설정 */
+export interface GemmaRoutingConfig {
+  /** 활성화 여부 (기본값: false) */
+  enabled: boolean;
+  /** mlx_lm.server 엔드포인트 (기본값: "http://localhost:8080/v1") */
+  endpoint: string;
+  /** 모델 ID (기본값: "gemma-4-e4b-it-4bit") */
+  model: string;
+  /** 요청 타임아웃 ms (기본값: 8000) */
+  timeoutMs: number;
+  /**
+   * 히스토리 최대 전달 수 (기본값: 10)
+   * Gemma 컨텍스트 윈도우 절약을 위해 최근 N개만 전달합니다.
+   */
+  historyLimit: number;
+}
+
 export interface AppConfig {
   agents: AgentConfig[];
   /** 슬래시 커맨드 전담 봇 설정 (없으면 커맨드 비활성화) */
@@ -90,6 +107,8 @@ export interface AppConfig {
    * 오케스트레이터 자신의 핀은 이 값과 무관하게 항상 유저 컨펌 필요
    */
   autonomousRoleUpdates: boolean;
+  /** Gemma4 로컬 라우터 설정 (없으면 비활성화) */
+  gemmaRouting?: GemmaRoutingConfig;
 }
 
 // 프로젝트 루트 (src/../)
@@ -149,6 +168,15 @@ export function loadConfig(): AppConfig {
     maxTurnsPerCycle: raw.maxTurnsPerCycle ?? 12,
     maxCycleMinutes: raw.maxCycleMinutes ?? 30,
     autonomousRoleUpdates: raw.autonomousRoleUpdates ?? false,
+    gemmaRouting: raw.gemmaRouting
+      ? {
+          enabled:      raw.gemmaRouting.enabled      ?? false,
+          endpoint:     raw.gemmaRouting.endpoint      ?? 'http://localhost:8080/v1',
+          model:        raw.gemmaRouting.model         ?? 'gemma-4-e4b-it-4bit',
+          timeoutMs:    raw.gemmaRouting.timeoutMs     ?? 8000,
+          historyLimit: raw.gemmaRouting.historyLimit  ?? 10,
+        }
+      : undefined,
   };
 }
 

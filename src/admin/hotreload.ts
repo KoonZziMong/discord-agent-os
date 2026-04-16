@@ -19,5 +19,12 @@ export function hotReloadAppConfig(appCfg: AppConfig, next: Partial<AppConfig>):
   if (next.guildId !== undefined) appCfg.guildId = next.guildId;
   if (next.commands !== undefined) appCfg.commands = next.commands;
   if (next.maxReviewRetries !== undefined) appCfg.maxReviewRetries = next.maxReviewRetries;
+  if (next.gemmaRouting !== undefined) {
+    appCfg.gemmaRouting = next.gemmaRouting;
+    // 설정 변경 시 가용성 캐시 무효화 (엔드포인트 변경 등 반영)
+    import('../gemmaRouter').then(({ invalidateAvailabilityCache }) => {
+      invalidateAvailabilityCache();
+    }).catch(() => {});
+  }
   console.log('[Admin] 앱 설정 즉시 반영 완료');
 }
