@@ -7,15 +7,10 @@
  *   1. isAvailable() — Gemma 서버 alive 체크 (GET /v1/models)
  *   2. classify()    — 각 에이전트의 전체 컨텍스트를 프롬프트에 주입 후 분류
  *
- * classify() 주입 컨텍스트:
- *   - 각 봇의 역할 채널 핀 (getRoleContent)
- *   - 현재 채널 컨텍스트 (토픽 + 핀)
- *   - 대화 히스토리 (최근 historyLimit 개)
- *   - 새 메시지 내용
- *
- * 반환값:
- *   - Agent[]  : 응답해야 할 봇 목록 (1개 이상)
- *   - null     : 응답 불필요 또는 판단 불가 (fallback — 조용히 무시)
+ * classify() 반환값:
+ *   - GemmaResult  : targets(봇 목록) + reason(판단 이유) + gemmaName(표시 이름)
+ *     - targets 비어있음 → 응답 봇 없음, reason으로 CmdBot이 설명
+ *   - null         — Gemma 서버 불가 또는 오류 (조용한 fallback)
  */
 
 import { Message } from 'discord.js';
@@ -24,6 +19,14 @@ import type { AppConfig, GemmaRoutingConfig } from './config';
 import { getChannelContext, ensureLoaded } from './channelContext';
 import { getRoleContent, getRoleChannelId } from './roleContext';
 import * as history from './history';
+
+// ── 타입 ─────────────────────────────────────────────────────
+
+export interface GemmaResult {
+  targets: Agent[];
+  reason: string;
+  gemmaName: string;  // [GEMMA_ROUTER] 핀의 name: 값 (기본값: "Gemma")
+}
 
 // ── 기본 라우팅 규칙 (rule 채널에 [GEMMA_ROUTER] 핀이 없을 때 사용) ──
 const DEFAULT_ROUTING_RULES = [
@@ -35,16 +38,14 @@ const DEFAULT_ROUTING_RULES = [
   '5. 봇 이름/역할 언급이 전혀 없고 봇과 완전히 무관한 내용 → 빈 배열을 반환합니다.',
 ].join('\n');
 
+const DEFAULT_GEMMA_NAME = 'Gemma';
+
 // ── 가용성 체크 ──────────────────────────────────────────────
 
-let _available: boolean | null = null;   // null = 미확인
+let _available: boolean | null = null;
 let _lastCheck = 0;
-const RECHECK_INTERVAL_MS = 60_000;      // 1분마다 재확인
+const RECHECK_INTERVAL_MS = 60_000;
 
-/**
- * Gemma 서버가 응답 가능한 상태인지 확인합니다.
- * 결과는 RECHECK_INTERVAL_MS 동안 캐시됩니다.
- */
 export async function isAvailable(cfg: GemmaRoutingConfig): Promise<boolean> {
   const now = Date.now();
   if (_available !== null && now - _lastCheck < RECHECK_INTERVAL_MS) {
@@ -53,7 +54,7 @@ export async function isAvailable(cfg: GemmaRoutingConfig): Promise<boolean> {
 
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3000); // ping 타임아웃 3초
+    const timer = setTimeout(() => controller.abort(), 3000);
     const res = await fetch(`${cfg.endpoint}/models`, { signal: controller.signal });
     clearTimeout(timer);
     _available = res.ok;
@@ -68,10 +69,30 @@ export async function isAvailable(cfg: GemmaRoutingConfig): Promise<boolean> {
   return _available;
 }
 
-/** 외부에서 가용성 캐시를 강제 무효화합니다. (재시작 감지 등) */
 export function invalidateAvailabilityCache(): void {
   _available = null;
   _lastCheck = 0;
+}
+
+// ── [GEMMA_ROUTER] 핀 파싱 ───────────────────────────────────
+
+interface GemmaPinData {
+  name: string;
+  rules: string;
+}
+
+function parseGemmaPin(pinContent: string): GemmaPinData {
+  // [GEMMA_ROUTER] 헤더 줄 제거
+  const body = pinContent.trimStart().replace(/^\[GEMMA_ROUTER\][^\n]*\n?/, '');
+
+  // name: 값 추출 (있으면 사용, 없으면 기본값)
+  const nameMatch = body.match(/^name:\s*(.+)$/m);
+  const name = nameMatch ? nameMatch[1].trim() : DEFAULT_GEMMA_NAME;
+
+  // name: 줄 제거한 나머지가 규칙 본문
+  const rules = body.replace(/^name:[^\n]*\n?/m, '').trim();
+
+  return { name, rules };
 }
 
 // ── 프롬프트 빌더 ────────────────────────────────────────────
@@ -80,7 +101,7 @@ async function buildClassifyPrompt(
   message: Message,
   agents: Agent[],
   appCfg: AppConfig,
-): Promise<string> {
+): Promise<{ prompt: string; gemmaName: string }> {
   const cfg = appCfg.gemmaRouting!;
   const channelId = message.channelId;
   const guild = agents[0]?.botClient.guilds.cache.first() ?? null;
@@ -114,8 +135,6 @@ async function buildClassifyPrompt(
   ].filter(Boolean).join('\n');
 
   // ── 대화 히스토리 (최근 N개) ──
-  // getHistory는 agentBotUserId 기준으로 role을 구분하므로,
-  // 라우팅용으로는 첫 번째 봇 기준으로 가져온 뒤 내용만 사용합니다.
   const rawHistory = history.getHistory(channelId, agents[0]?.id ?? '', true);
   const recentHistory = rawHistory.slice(-cfg.historyLimit);
   const historyBlock = recentHistory.length > 0
@@ -126,13 +145,13 @@ async function buildClassifyPrompt(
   const senderName = message.member?.displayName ?? message.author.username;
   const newMessage = `${senderName}: ${message.content}`;
 
-  // ── 봇 목록 (응답 형식 안내용) ──
+  // ── 봇 목록 ──
   const botList = agents.map((a) => `"${a.name}"`).join(', ');
 
   // ── rule 채널에서 [GEMMA_ROUTER] 핀 조회 ──
-  // ROLE 카테고리의 'rule' 채널 핀 중 [GEMMA_ROUTER]로 시작하는 것을 라우팅 규칙으로 사용합니다.
-  // 없으면 DEFAULT_ROUTING_RULES를 사용합니다.
   let routingRules = DEFAULT_ROUTING_RULES;
+  let gemmaName = DEFAULT_GEMMA_NAME;
+
   if (guild && client) {
     const ruleChannelId = getRoleChannelId(guild, 'rule');
     if (ruleChannelId) {
@@ -140,14 +159,15 @@ async function buildClassifyPrompt(
       const ruleCtx = getChannelContext(ruleChannelId);
       const gemmaPin = ruleCtx.pins.find((p) => p.trimStart().startsWith('[GEMMA_ROUTER]'));
       if (gemmaPin) {
-        // [GEMMA_ROUTER] 첫 줄 제거 후 본문만 추출
-        routingRules = gemmaPin.trimStart().replace(/^\[GEMMA_ROUTER\][^\n]*\n?/, '').trim();
-        console.log('[GemmaRouter] rule 채널 커스텀 규칙 적용');
+        const parsed = parseGemmaPin(gemmaPin);
+        gemmaName = parsed.name;
+        if (parsed.rules) routingRules = parsed.rules;
+        console.log(`[GemmaRouter] rule 채널 커스텀 규칙 적용 (name: ${gemmaName})`);
       }
     }
   }
 
-  return [
+  const prompt = [
     '당신은 Discord 멀티봇 시스템의 라우터입니다.',
     '아래 정보를 바탕으로 새 메시지에 응답해야 할 봇을 결정하세요.',
     '',
@@ -167,29 +187,39 @@ async function buildClassifyPrompt(
     `응답 가능한 봇: ${botList}`,
     routingRules,
     '',
-    '반드시 아래 JSON 형식만 출력하세요. 설명 없이 JSON만:',
-    '{"targets": ["봇이름1", "봇이름2"]}',
+    '반드시 아래 JSON 형식만 출력하세요. 설명 없이 JSON만.',
+    'reason에는 선택 이유를 한 줄로 간결하게 작성하세요 (타겟이 없을 때도 이유를 작성하세요):',
+    '{"targets": ["봇이름1", "봇이름2"], "reason": "선택 이유"}',
     '또는',
-    '{"targets": []}',
+    '{"targets": [], "reason": "타겟 미선택 이유"}',
   ].join('\n');
+
+  return { prompt, gemmaName };
 }
 
 // ── JSON 파싱 ────────────────────────────────────────────────
 
-function parseTargets(text: string, agents: Agent[]): Agent[] {
-  // JSON 블록 추출 (reasoning 모델이 생각 토큰을 먼저 출력할 수 있음)
+function parseResult(
+  text: string,
+  agents: Agent[],
+  gemmaName: string,
+): GemmaResult {
   const jsonMatch = text.match(/\{[\s\S]*?"targets"[\s\S]*?\}/);
-  if (!jsonMatch) return [];
+  if (!jsonMatch) return { targets: [], reason: '응답 파싱 실패', gemmaName };
 
-  let parsed: { targets?: unknown };
+  let parsed: { targets?: unknown; reason?: unknown };
   try {
-    parsed = JSON.parse(jsonMatch[0]) as { targets?: unknown };
+    parsed = JSON.parse(jsonMatch[0]) as { targets?: unknown; reason?: unknown };
   } catch {
     console.warn('[GemmaRouter] JSON 파싱 실패:', jsonMatch[0].slice(0, 100));
-    return [];
+    return { targets: [], reason: 'JSON 파싱 실패', gemmaName };
   }
 
-  if (!Array.isArray(parsed.targets)) return [];
+  const reason = typeof parsed.reason === 'string' ? parsed.reason : '이유 없음';
+
+  if (!Array.isArray(parsed.targets)) {
+    return { targets: [], reason, gemmaName };
+  }
 
   const targets: Agent[] = [];
   for (const name of parsed.targets) {
@@ -199,39 +229,39 @@ function parseTargets(text: string, agents: Agent[]): Agent[] {
     );
     if (agent) targets.push(agent);
   }
-  return targets;
+
+  return { targets, reason, gemmaName };
 }
 
 // ── 메인 분류 함수 ───────────────────────────────────────────
 
 /**
- * 메시지를 분류하여 응답해야 할 에이전트 목록을 반환합니다.
+ * 메시지를 분류하여 GemmaResult를 반환합니다.
  *
- * @returns Agent[] — 응답할 봇 목록 (빈 배열이면 응답 불필요)
- * @returns null    — Gemma 서버 불가 또는 오류 (조용한 fallback)
+ * @returns GemmaResult  — targets(응답 봇), reason(이유), gemmaName(표시명)
+ *   - targets.length === 0 → 응답 봇 없음, reason으로 CmdBot이 설명
+ * @returns null          — Gemma 서버 불가 또는 오류 (조용한 fallback)
  */
 export async function classify(
   message: Message,
   agents: Agent[],
   appCfg: AppConfig,
-): Promise<Agent[] | null> {
+): Promise<GemmaResult | null> {
   const cfg = appCfg.gemmaRouting;
   if (!cfg?.enabled) return null;
 
-  // 가용성 체크
   const available = await isAvailable(cfg);
   if (!available) return null;
 
-  // 프롬프트 구성
   let prompt: string;
+  let gemmaName: string;
   try {
-    prompt = await buildClassifyPrompt(message, agents, appCfg);
+    ({ prompt, gemmaName } = await buildClassifyPrompt(message, agents, appCfg));
   } catch (err) {
     console.warn('[GemmaRouter] 프롬프트 빌드 실패:', err instanceof Error ? err.message : err);
     return null;
   }
 
-  // Gemma 호출
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
 
@@ -251,7 +281,7 @@ export async function classify(
 
     if (!res.ok) {
       console.warn(`[GemmaRouter] HTTP ${res.status}`);
-      _available = false; // 오류 시 캐시 무효화
+      _available = false;
       return null;
     }
 
@@ -259,11 +289,11 @@ export async function classify(
       choices?: Array<{ message?: { content?: string } }>;
     };
     const content = data.choices?.[0]?.message?.content ?? '';
-    console.log(`[GemmaRouter] 응답: ${content.slice(0, 120)}`);
+    console.log(`[GemmaRouter] 응답: ${content.slice(0, 200)}`);
 
-    const targets = parseTargets(content, agents);
-    console.log(`[GemmaRouter] 선택된 봇: [${targets.map((a) => a.name).join(', ') || '없음'}]`);
-    return targets;
+    const result = parseResult(content, agents, gemmaName);
+    console.log(`[GemmaRouter] 선택된 봇: [${result.targets.map((a) => a.name).join(', ') || '없음'}] | 이유: ${result.reason}`);
+    return result;
 
   } catch (err) {
     clearTimeout(timer);

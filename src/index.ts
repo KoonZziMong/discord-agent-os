@@ -218,7 +218,7 @@ async function main(): Promise<void> {
   }
 
   // [8] 라우터 생성 후 messageCreate 이벤트 바인딩
-  const router = createRouter(agents, appCfg, primaryClient);
+  const router = createRouter(agents, appCfg, primaryClient, cmdClient ?? undefined);
 
   for (const client of clients) {
     client.on(Events.MessageCreate, (message) => {

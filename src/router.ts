@@ -242,7 +242,7 @@ async function handleHarnessMessage(
 
 // ── 라우터 팩토리 ─────────────────────────────────────────────
 
-export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: Client) {
+export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: Client, cmdClient?: Client) {
   const agentIds = new Set(agents.map((a) => a.id));
 
   return async function handle(message: Message, sourceClient: Client): Promise<void> {
@@ -322,8 +322,9 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
         appCfg.gemmaRouting?.enabled &&
         sourceClient.user?.id === agents[0]?.botClient.user?.id
       ) {
-        const targets = await gemmaRouter.classify(message, agents, appCfg);
-        if (targets && targets.length > 0) {
+        const result = await gemmaRouter.classify(message, agents, appCfg);
+
+        if (result && result.targets.length > 0) {
           // 히스토리에 유저 메시지 추가
           history.addMessage(channelId, {
             authorId: message.author.id,
@@ -334,7 +335,7 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
           const services = extractToolServices(message, appCfg.toolBots);
 
           // 선택된 봇들 병렬 응답 (각자의 botClient로 전송)
-          await Promise.all(targets.map(async (agent) => {
+          await Promise.all(result.targets.map(async (agent) => {
             const agentCh = await agent.botClient.channels
               .fetch(channelId)
               .catch(() => null) as TextChannel | null;
@@ -346,6 +347,13 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
               console.error(`[GemmaRouter] ${agent.name} 응답 오류: ${msg}`);
             }
           }));
+
+        } else if (result && result.targets.length === 0 && cmdClient) {
+          // 타겟 없음 → CmdBot이 젬마 이름으로 이유 응답
+          const ch = await cmdClient.channels.fetch(channelId).catch(() => null) as TextChannel | null;
+          if (ch) {
+            await ch.send(`-# 🤖 ${result.gemmaName}: ${result.reason}`).catch(() => {});
+          }
         }
       }
       return;
