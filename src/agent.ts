@@ -15,7 +15,7 @@
  *   - router.ts에서 @툴봇 멘션을 파싱하여 services를 결정합니다.
  */
 
-import { Client, Message, TextChannel } from 'discord.js';
+import { Client, Message, TextChannel, ThreadChannel } from 'discord.js';
 import type { AgentConfig, AppConfig } from './config';
 import { createLLMClient, type LLMClient, type ToolResultContent } from './llm';
 import { AgentMCPManager } from './mcp';
@@ -45,6 +45,9 @@ export class Agent {
 
   private llm: LLMClient;
   readonly mcpManager: AgentMCPManager;
+
+  /** 목표별 포럼 thread 저장 (graphId → ThreadChannel) */
+  private goalThreads = new Map<string, ThreadChannel>();
 
   constructor(cfg: AgentConfig, botClient: Client, appCfg: AppConfig) {
     this.id = cfg.id;
@@ -184,8 +187,8 @@ export class Agent {
     try {
       await channel.send(`🤔 **목표 분석 중...**\n> ${goal}`);
 
-      // 포럼 채널에 목표 thread 생성
-      let goalThread: import('discord.js').ThreadChannel | null = null;
+      // (a) 포럼 채널에 목표 thread 생성 — 목표 수신 즉시 실행
+      let goalThread: ThreadChannel | null = null;
       try {
         const guild = this.botClient.guilds.cache.first();
         if (guild) {
@@ -210,21 +213,86 @@ export class Agent {
       const graph = TaskGraph.create(goal, message.channelId, this.id, taskInputs);
       console.log(`[${this.name}] 태스크 그래프 생성: ${graph.data.id} (${taskInputs.length}개)`);
 
-      // 3. 순차 실행
+      // (d) threadId를 목표 실행 컨텍스트(goalThreads Map)에 유지
+      if (goalThread) {
+        this.goalThreads.set(graph.data.id, goalThread);
+      }
+
+      // 3. 순차 실행 — (b) 각 태스크 시작·완료·실패 시 thread에 진행 상황 append
       await runTaskGraph(
         graph,
         channel,
-        (task) => this.executeTask(task, graph, message.channelId),
+        async (task) => {
+          // 태스크 시작 알림
+          if (goalThread) {
+            await appendToThread(
+              goalThread,
+              `⚙️ **[${task.id}] ${task.title}** 시작 중...`,
+            ).catch((e: unknown) => {
+              console.warn('[forum] thread append 실패:', e instanceof Error ? e.message : e);
+            });
+          }
+
+          try {
+            const result = await this.executeTask(task, graph, message.channelId);
+
+            // 태스크 완료 결과 기록
+            if (goalThread) {
+              await appendToThread(
+                goalThread,
+                `✅ **[${task.id}] ${task.title}** 완료\n\`\`\`\n${result.slice(0, 300)}\n\`\`\``,
+              ).catch((e: unknown) => {
+                console.warn('[forum] thread append 실패:', e instanceof Error ? e.message : e);
+              });
+            }
+
+            return result;
+          } catch (err: unknown) {
+            // 태스크 실패 내용 기록
+            if (goalThread) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              await appendToThread(
+                goalThread,
+                `❌ **[${task.id}] ${task.title}** 실패\n\`\`\`\n${errMsg.slice(0, 200)}\n\`\`\``,
+              ).catch((e: unknown) => {
+                console.warn('[forum] thread append 실패:', e instanceof Error ? e.message : e);
+              });
+            }
+            throw err;
+          }
+        },
       );
 
-      // 결과를 포럼 thread에 append
+      // (c) 목표 완료 시 결과 및 산출물 요약을 thread에 최종 기재
       if (goalThread) {
         try {
-          const status = graph.isComplete() ? '✅ 완료' : '❌ 실패';
-          await appendToThread(goalThread, `## ${status}\n\n목표 수행이 완료되었습니다.\n> ${goal}`);
+          const isSuccess = graph.isComplete();
+          const statusLabel = isSuccess ? '✅ 완료' : '❌ 실패';
+          const completedTasks = graph.data.tasks
+            .filter((t) => t.status === 'completed')
+            .map((t) => `- **[${t.id}]** ${t.title}: ${(t.result ?? '').slice(0, 150)}`)
+            .join('\n');
+
+          await appendToThread(
+            goalThread,
+            [
+              `## ${statusLabel} 최종 결과`,
+              '',
+              `> ${goal}`,
+              '',
+              '### 완료된 태스크',
+              completedTasks || '(없음)',
+              '',
+              `_총 ${graph.data.tasks.length}개 태스크 중 ` +
+              `${graph.data.tasks.filter((t) => t.status === 'completed').length}개 완료_`,
+            ].join('\n'),
+          );
         } catch (err) {
-          console.warn('[forum] thread append 실패 (무시):', err instanceof Error ? err.message : err);
+          console.warn('[forum] thread 최종 append 실패 (무시):', err instanceof Error ? err.message : err);
         }
+
+        // 실행 완료 후 컨텍스트에서 제거
+        this.goalThreads.delete(graph.data.id);
       }
 
       // 4. 회고 — 사이클 완료 후 이슈 분석 및 역할 핀 개선 제안 (Phase 1: 유저 컨펌)
