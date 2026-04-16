@@ -17,7 +17,7 @@ import { Message } from 'discord.js';
 import type { Agent } from './agent';
 import type { AppConfig, GemmaRoutingConfig } from './config';
 import { getChannelContext, ensureLoaded } from './channelContext';
-import { getRoleChannelId } from './roleContext';
+import { getRoleContent, getRoleChannelId } from './roleContext';
 import * as history from './history';
 
 // ── 타입 ─────────────────────────────────────────────────────
@@ -118,18 +118,23 @@ async function buildClassifyPrompt(
   const guild = agents[0]?.botClient.guilds.cache.first() ?? null;
   const client = agents[0]?.botClient;
 
-  // ── 봇 목록 (이름·역할·한 줄 설명만 — 전체 역할 컨텍스트 불필요) ──
+  // ── 각 봇의 전체 역할 컨텍스트 수집 ──
   const agentBlocks: string[] = [];
   for (const agent of agents) {
-    const roleTopic = guild
-      ? (() => {
-          const roleChannelId = getRoleChannelId(guild, agent.config.role ?? '');
-          return roleChannelId ? (getChannelContext(roleChannelId).topic ?? '') : '';
-        })()
+    const roleContent = guild && client
+      ? await getRoleContent(
+          agent.botClient,
+          agent.id,
+          channelId,
+          agent.config.role,
+          guild,
+          false,
+        ).catch(() => '')
       : '';
+
     agentBlocks.push(
-      `- ${agent.name} (역할: ${agent.config.role ?? '없음'})` +
-      (roleTopic ? ` — ${roleTopic}` : ''),
+      `=== ${agent.name} (역할: ${agent.config.role ?? '없음'}, ID: ${agent.id}) ===\n` +
+      (roleContent || '(역할 정보 없음)'),
     );
   }
 
@@ -183,8 +188,8 @@ async function buildClassifyPrompt(
     '당신은 Discord 멀티봇 시스템의 라우터입니다.',
     '아래 정보를 바탕으로 새 메시지에 응답해야 할 봇을 결정하세요.',
     '',
-    '━━ 응답 가능한 봇 ━━',
-    agentBlocks.join('\n'),
+    '━━ 봇 컨텍스트 ━━',
+    agentBlocks.join('\n\n'),
     '',
     '━━ 채널 컨텍스트 ━━',
     channelCtx || '(없음)',
