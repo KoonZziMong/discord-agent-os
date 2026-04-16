@@ -6,7 +6,7 @@
  *
  * 대화 히스토리는 history.ts(인메모리)에서 관리합니다.
  *   - 유저 메시지: router.ts에서 수신 시 history.addMessage() 호출
- *   - 봇 응답: respond()/respondInCollab() 완료 후 history.addMessage() 호출
+ *   - 봇 응답: respond()/respondInChannel() 완료 후 history.addMessage() 호출
  *
  * 툴 활성화 방식:
  *   - services 파라미터로 사용할 MCP 서버 이름 목록을 전달합니다.
@@ -138,24 +138,23 @@ export class Agent {
   }
 
   /**
-   * 협력 채널에서 응답 텍스트를 생성하여 반환합니다.
-   * Discord 전송은 collaboration.ts가 담당합니다.
+   * 채널에서 응답 텍스트를 생성하여 반환합니다. (하네스 라우팅, 봇 @멘션 경로 공용)
+   * Discord 전송은 router.ts가 담당합니다.
    *
-   * 유저 메시지 및 앞선 에이전트 응답은 history에 이미 추가된 상태입니다.
-   * history.getHistory()로 협력 채널 전체 맥락을 가져와 API 호출합니다.
+   * 히스토리는 router.ts에서 이미 추가된 상태입니다.
    */
-  async respondInCollab(
-    collabChannelId: string,
+  async respondInChannel(
+    channelId: string,
     services: string[] = [],
   ): Promise<string> {
-    const systemPrompt = await this.buildSystemPrompt(collabChannelId);
-    const historyMessages = history.getHistory(collabChannelId, this.id, true);
+    const systemPrompt = await this.buildSystemPrompt(channelId);
+    const historyMessages = history.getHistory(channelId, this.id, true);
 
     const { text } = await this.llm.chat(
       systemPrompt,
       historyMessages,
       this.buildChatTools(services),
-      (name, input, id) => this.executeTool(name, input, id, collabChannelId),
+      (name, input, id) => this.executeTool(name, input, id, channelId),
     );
     return text;
   }

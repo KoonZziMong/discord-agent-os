@@ -1,6 +1,5 @@
 {
   "guildId": "YOUR_DISCORD_SERVER_ID",
-  "collabChannel": "COLLABORATION_CHANNEL_ID",
   "adminPort": 3000,
   "historyLimit": 50,
   "maxTurnsPerCycle": 12,
@@ -10,9 +9,18 @@
   "toolBots": {},
   "channelLimits": {},
   "commands": {
-    "help": ["!도움말", "!help"],
-    "task": ["!목표", "!task"],
-    "autonomous": ["!자율", "!pipeline"]
+    "help": [
+      "!도움말",
+      "!help"
+    ],
+    "task": [
+      "!목표",
+      "!task"
+    ],
+    "autonomous": [
+      "!자율",
+      "!pipeline"
+    ]
   },
   "agents": [
     {

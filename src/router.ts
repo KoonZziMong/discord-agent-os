@@ -4,10 +4,9 @@
  * 라우팅 규칙:
  *   1. 봇 메시지:
  *      - [AGENT_MSG] 봉투를 가진 알려진 에이전트 봇 메시지 → 하네스 라우팅
- *      - 그 외 봇 메시지 → 무시
- *   2. 협력 채널 (유저 메시지) → collaboration.handle() 호출
- *   3. 그 외 채널 (유저 메시지) → 멘션된 봇만 응답 (@에이전트 멘션 기반)
- *   4. 명령어(!도움말) → AI 호출 없이 즉시 응답
+ *      - 그 외 봇 메시지 → 멘션된 봇들에게 병렬 전달
+ *   2. 유저 메시지 → @멘션된 봇만 응답 (모든 채널 동일)
+ *   3. 명령어(!도움말) → AI 호출 없이 즉시 응답
  *
  * 하네스 라우팅:
  *   - [AGENT_MSG] 헤더의 `to` 필드로 대상 에이전트를 결정
@@ -18,7 +17,6 @@
 import { Message, Client, TextChannel } from 'discord.js';
 import type { Agent } from './agent';
 import type { AppConfig } from './config';
-import { handle as handleCollab } from './collaboration';
 import { sendSplit } from './utils';
 import * as history from './history';
 import { loadChannelContext, getChannelContext } from './channelContext';
@@ -184,7 +182,7 @@ async function handleHarnessMessage(
   }
 
   // 대상 에이전트 찾기
-  const targetAgent = agents.find((a) => (a.config.role ?? a.id) === header.to);
+  const targetAgent = agents.find((a) => a.config.role === header.to || a.id === header.to);
   if (!targetAgent) {
     console.warn(`[하네스] 대상 에이전트 없음 (to: ${header.to})`);
     return;
@@ -212,9 +210,9 @@ async function handleHarnessMessage(
   }
 
   // 에이전트가 봉투 메시지를 이해할 수 있도록 body를 전달
-  // respondInCollab은 히스토리 기반으로 응답 → 봉투 포함 전체 메시지가 히스토리에 있음
+  // respondInChannel은 히스토리 기반으로 응답 → 봉투 포함 전체 메시지가 히스토리에 있음
   try {
-    const responseText = await targetAgent.respondInCollab(channelId);
+    const responseText = await targetAgent.respondInChannel(channelId);
     history.addMessage(channelId, {
       authorId: targetAgent.id,
       authorName: targetAgent.name,
@@ -289,7 +287,7 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
             const agentCh = await agent.botClient.channels.fetch(chId).catch(() => null) as TextChannel | null;
             if (!agentCh) return;
             try {
-              const responseText = await agent.respondInCollab(chId);
+              const responseText = await agent.respondInChannel(chId);
               history.addMessage(chId, {
                 authorId: agent.id,
                 authorName: agent.name,
@@ -311,20 +309,7 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
 
     const channelId = message.channelId;
 
-    // ── 협력 채널 (유저 메시지) ─────────────────────────────
-    if (channelId === appCfg.collabChannel) {
-      if (sourceClient.user?.id !== primaryClient.user?.id) return;
-      history.addMessage(channelId, {
-        authorId: message.author.id,
-        authorName: message.member?.displayName ?? message.author.username,
-        content: message.content,
-      });
-      const services = extractToolServices(message, appCfg.toolBots);
-      await handleCollab(message, agents, appCfg.collabChannel, services);
-      return;
-    }
-
-    // ── 그 외 채널 (유저 메시지) ────────────────────────────
+    // ── 유저 메시지 — @멘션 기반 라우팅 (모든 채널 동일) ────
     const mentionedAgent = agents.find(
       (a) => a.botClient === sourceClient && message.mentions.users.has(a.id),
     );
@@ -337,30 +322,31 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
     }
 
     const trimmed = message.content.trim();
+    // @멘션을 제거하고 공백을 정리한 텍스트 (prefix 체크용)
+    // "@찌몽 !목표 goal" → "!목표 goal", "!목표 @찌몽 goal" → "!목표 goal"
+    const stripped = trimmed.replace(/<@!?\d+>/g, '').trim();
     const cmds = appCfg.commands;
 
-    if (cmds.help.includes(trimmed)) {
+    if (cmds.help.includes(stripped)) {
       await handleHelpCommand(mentionedAgent, message, appCfg);
       return;
     }
 
-    // !목표 / !task → Task Graph 생성 (T1/T2/T3 계획 표시) 후 팀 위임 실행
-    // 오케스트레이터는 claude_code 툴이 없으므로 직접 실행 불가 → 팀원 @멘션으로 위임
-    // (단독 에이전트 대화 응답이 필요하면 그냥 @멘션 대화 사용)
-    const taskPrefix = cmds.task.find((p) => trimmed.startsWith(p + ' '));
+    // !목표 / !task → Task Graph 생성 후 팀 위임 실행
+    // "@찌몽 !목표 goal" / "!목표 @찌몽 goal" 두 형식 모두 지원
+    const taskPrefix = cmds.task.find((p) => stripped.startsWith(p + ' '));
     if (taskPrefix) {
-      // Discord 봇 멘션(<@id>) 제거 — 목표 텍스트가 상태 메시지로 echo될 때 재라우팅 방지
-      const goal = trimmed.slice(taskPrefix.length).trim().replace(/<@!?\d+>/g, '').trim();
+      const goal = stripped.slice(taskPrefix.length).trim();
       if (goal) {
         await mentionedAgent.startTaskGraph(message, goal);
         return;
       }
     }
 
-    // !자율 / !pipeline → 단독 에이전트 자동 파이프라인 (내부 planner→developer→reviewer→tester)
-    const autonomousPrefix = cmds.autonomous?.find((p) => trimmed.startsWith(p + ' '));
+    // !자율 / !pipeline → 단독 에이전트 자동 파이프라인
+    const autonomousPrefix = cmds.autonomous?.find((p) => stripped.startsWith(p + ' '));
     if (autonomousPrefix) {
-      const goal = trimmed.slice(autonomousPrefix.length).trim().replace(/<@!?\d+>/g, '').trim();
+      const goal = stripped.slice(autonomousPrefix.length).trim();
       if (goal) {
         await mentionedAgent.startTaskGraph(message, goal);
         return;
