@@ -46,6 +46,9 @@ let _available: boolean | null = null;
 let _lastCheck = 0;
 const RECHECK_INTERVAL_MS = 60_000;
 
+/** 마지막으로 파싱된 gemmaName 캐시 (오류 시 표시용) */
+let _cachedGemmaName = DEFAULT_GEMMA_NAME;
+
 export async function isAvailable(cfg: GemmaRoutingConfig): Promise<boolean> {
   const now = Date.now();
   if (_available !== null && now - _lastCheck < RECHECK_INTERVAL_MS) {
@@ -64,7 +67,7 @@ export async function isAvailable(cfg: GemmaRoutingConfig): Promise<boolean> {
 
   _lastCheck = now;
   if (!_available) {
-    console.warn('[GemmaRouter] 서버 응답 없음 — 라우팅 건너뜀');
+    console.warn('[GemmaRouter] 서버 응답 없음');
   }
   return _available;
 }
@@ -161,6 +164,7 @@ async function buildClassifyPrompt(
       if (gemmaPin) {
         const parsed = parseGemmaPin(gemmaPin);
         gemmaName = parsed.name;
+        _cachedGemmaName = gemmaName; // 오류 시 표시용 캐시 갱신
         if (parsed.rules) routingRules = parsed.rules;
         console.log(`[GemmaRouter] rule 채널 커스텀 규칙 적용 (name: ${gemmaName})`);
       }
@@ -242,6 +246,14 @@ function parseResult(
  *   - targets.length === 0 → 응답 봇 없음, reason으로 CmdBot이 설명
  * @returns null          — Gemma 서버 불가 또는 오류 (조용한 fallback)
  */
+/**
+ * 메시지를 분류하여 GemmaResult를 반환합니다.
+ *
+ * @returns GemmaResult  — targets(응답 봇), reason(이유), gemmaName(표시명)
+ *   - targets.length > 0  → 해당 봇들이 응답
+ *   - targets.length === 0 → CmdBot이 reason으로 설명 (Gemma 판단 or 오류)
+ * @returns null           — gemmaRouting.enabled = false (완전 무응답)
+ */
 export async function classify(
   message: Message,
   agents: Agent[],
@@ -250,16 +262,20 @@ export async function classify(
   const cfg = appCfg.gemmaRouting;
   if (!cfg?.enabled) return null;
 
+  // 서버 불가 → CmdBot에 알림
   const available = await isAvailable(cfg);
-  if (!available) return null;
+  if (!available) {
+    return { targets: [], reason: `서버(${cfg.endpoint})에 연결할 수 없습니다`, gemmaName: _cachedGemmaName };
+  }
 
   let prompt: string;
   let gemmaName: string;
   try {
     ({ prompt, gemmaName } = await buildClassifyPrompt(message, agents, appCfg));
   } catch (err) {
-    console.warn('[GemmaRouter] 프롬프트 빌드 실패:', err instanceof Error ? err.message : err);
-    return null;
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.warn('[GemmaRouter] 프롬프트 빌드 실패:', errMsg);
+    return { targets: [], reason: `컨텍스트 빌드 오류: ${errMsg.slice(0, 60)}`, gemmaName: _cachedGemmaName };
   }
 
   const controller = new AbortController();
@@ -282,7 +298,7 @@ export async function classify(
     if (!res.ok) {
       console.warn(`[GemmaRouter] HTTP ${res.status}`);
       _available = false;
-      return null;
+      return { targets: [], reason: `서버 오류 (HTTP ${res.status})`, gemmaName };
     }
 
     const data = await res.json() as {
@@ -298,12 +314,11 @@ export async function classify(
   } catch (err) {
     clearTimeout(timer);
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('abort')) {
-      console.warn(`[GemmaRouter] 타임아웃 (${cfg.timeoutMs}ms)`);
-    } else {
-      console.warn('[GemmaRouter] 호출 실패:', msg);
-    }
+    const reason = msg.includes('abort')
+      ? `응답 시간 초과 (${cfg.timeoutMs / 1000}초)`
+      : `호출 실패: ${msg.slice(0, 60)}`;
+    console.warn(`[GemmaRouter] ${reason}`);
     _available = false;
-    return null;
+    return { targets: [], reason, gemmaName };
   }
 }
