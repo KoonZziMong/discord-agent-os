@@ -67,6 +67,39 @@ function splitContent(content, maxLen = 1990) {
   return chunks;
 }
 
+/**
+ * 섹션 경계 인식 분할 — [SECTION_NAME] 으로 시작하는 섹션은 항상 별도 청크로 분리합니다.
+ * 섹션 분리 후 각 파트에 splitContent를 적용하여 2000자 한도도 준수합니다.
+ *
+ * 예: rule.md 내 [GEMMA_ROUTER] 섹션 → 독립된 핀으로 등록
+ */
+function splitContentSectionAware(content, maxLen = 1990) {
+  // [대문자_영문] 패턴으로 시작하는 줄을 섹션 경계로 인식
+  const sectionPattern = /^(\[GEMMA_ROUTER\][^\n]*)/m;
+  const parts = content.split(sectionPattern);
+  // split으로 캡처 그룹이 포함되어 [앞내용, 구분자, 뒷내용, ...] 형태로 나옴
+  const sections = [];
+  let i = 0;
+  while (i < parts.length) {
+    if (parts[i].match(/^\[GEMMA_ROUTER\]/)) {
+      // 구분자(섹션 헤더) + 다음 내용 합치기
+      const body = (parts[i + 1] ?? '').trimEnd();
+      sections.push((parts[i] + body).trim());
+      i += 2;
+    } else {
+      const trimmed = parts[i].trim();
+      if (trimmed) sections.push(trimmed);
+      i += 1;
+    }
+  }
+  // 각 섹션을 추가로 splitContent 처리
+  const result = [];
+  for (const section of sections) {
+    result.push(...splitContent(section, maxLen));
+  }
+  return result.filter((s) => s.length > 0);
+}
+
 // ── 역할 채널 정의 ─────────────────────────────────────────────
 
 const DEFAULT_ROLES = [
@@ -179,7 +212,9 @@ async function handleInit(interaction) {
       });
 
       // 역할 내용 핀 (2000자 초과 시 청크 분할)
-      const chunks = splitContent(loadRoleContent(role.name));
+      const chunks = role.name === 'rule'
+        ? splitContentSectionAware(loadRoleContent(role.name))
+        : splitContent(loadRoleContent(role.name));
       for (const chunk of chunks) {
         const msg = await channel.send(chunk);
         await msg.pin();
@@ -261,7 +296,9 @@ async function handleReset(interaction) {
           parent: category.id,
           topic: role.description,
         });
-        const chunks = splitContent(loadRoleContent(role.name));
+        const chunks = role.name === 'rule'
+        ? splitContentSectionAware(loadRoleContent(role.name))
+        : splitContent(loadRoleContent(role.name));
         for (const chunk of chunks) {
           const msg = await channel.send(chunk);
           await msg.pin();
@@ -282,7 +319,9 @@ async function handleReset(interaction) {
       }
 
       // 최신 기본값으로 새 메시지 작성 + 핀 고정 (2000자 초과 시 청크 분할)
-      const chunks = splitContent(loadRoleContent(role.name));
+      const chunks = role.name === 'rule'
+        ? splitContentSectionAware(loadRoleContent(role.name))
+        : splitContent(loadRoleContent(role.name));
       for (const chunk of chunks) {
         const newMsg = await textChannel.send(chunk);
         await newMsg.pin();
