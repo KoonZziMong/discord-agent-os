@@ -45,6 +45,28 @@ function loadRoleContent(name) {
   }
 }
 
+/**
+ * 2000자 초과 내용을 Discord 메시지 한도에 맞게 청크로 분할합니다.
+ * 줄 단위로 나눠 자연스러운 위치에서 분리합니다.
+ */
+function splitContent(content, maxLen = 1990) {
+  if (content.length <= maxLen) return [content];
+  const chunks = [];
+  const lines = content.split('\n');
+  let current = '';
+  for (const line of lines) {
+    const addition = current ? '\n' + line : line;
+    if (current.length + addition.length > maxLen) {
+      if (current) chunks.push(current);
+      current = line;
+    } else {
+      current += addition;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 // ── 역할 채널 정의 ─────────────────────────────────────────────
 
 const DEFAULT_ROLES = [
@@ -156,9 +178,12 @@ async function handleInit(interaction) {
         topic: role.description,
       });
 
-      // 역할 내용 핀
-      const msg = await channel.send(loadRoleContent(role.name));
-      await msg.pin();
+      // 역할 내용 핀 (2000자 초과 시 청크 분할)
+      const chunks = splitContent(loadRoleContent(role.name));
+      for (const chunk of chunks) {
+        const msg = await channel.send(chunk);
+        await msg.pin();
+      }
 
       // CmdBot 디폴트 봇 핀 (미설정 상태로 초기화)
       const cmdBotId = loadCmdBotId(interaction);
@@ -236,8 +261,11 @@ async function handleReset(interaction) {
           parent: category.id,
           topic: role.description,
         });
-        const msg = await channel.send(loadRoleContent(role.name));
-        await msg.pin();
+        const chunks = splitContent(loadRoleContent(role.name));
+        for (const chunk of chunks) {
+          const msg = await channel.send(chunk);
+          await msg.pin();
+        }
         log.push(`  ✅ #${role.name} — 채널 생성 + 핀 등록 완료`);
         continue;
       }
@@ -253,9 +281,12 @@ async function handleReset(interaction) {
         await msg.unpin().catch(() => {});
       }
 
-      // 최신 기본값으로 새 메시지 작성 + 핀 고정
-      const newMsg = await textChannel.send(loadRoleContent(role.name));
-      await newMsg.pin();
+      // 최신 기본값으로 새 메시지 작성 + 핀 고정 (2000자 초과 시 청크 분할)
+      const chunks = splitContent(loadRoleContent(role.name));
+      for (const chunk of chunks) {
+        const newMsg = await textChannel.send(chunk);
+        await newMsg.pin();
+      }
 
       log.push(`  ✅ #${role.name} — 핀 교체 완료 (기존 ${rolePins.length}개 언핀)`);
     }
