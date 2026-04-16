@@ -49,6 +49,14 @@ const RECHECK_INTERVAL_MS = 60_000;
 /** 마지막으로 파싱된 gemmaName 캐시 (오류 시 표시용) */
 let _cachedGemmaName = DEFAULT_GEMMA_NAME;
 
+/** classify()가 마지막으로 빌드한 컨텍스트 캐시 (selfQuery에서 재사용) */
+let _cachedPromptData: {
+  gemmaName: string;
+  routingRules: string;
+  botList: string;
+  historyBlock: string;
+} | null = null;
+
 export async function isAvailable(cfg: GemmaRoutingConfig): Promise<boolean> {
   const now = Date.now();
   if (_available !== null && now - _lastCheck < RECHECK_INTERVAL_MS) {
@@ -104,7 +112,7 @@ async function buildClassifyPrompt(
   message: Message,
   agents: Agent[],
   appCfg: AppConfig,
-): Promise<{ prompt: string; gemmaName: string }> {
+): Promise<{ prompt: string; gemmaName: string; routingRules: string; botList: string; historyBlock: string }> {
   const cfg = appCfg.gemmaRouting!;
   const channelId = message.channelId;
   const guild = agents[0]?.botClient.guilds.cache.first() ?? null;
@@ -198,7 +206,7 @@ async function buildClassifyPrompt(
     '{"targets": [], "reason": "타겟 미선택 이유"}',
   ].join('\n');
 
-  return { prompt, gemmaName };
+  return { prompt, gemmaName, routingRules, botList, historyBlock };
 }
 
 // ── JSON 파싱 ────────────────────────────────────────────────
@@ -270,8 +278,13 @@ export async function classify(
 
   let prompt: string;
   let gemmaName: string;
+  let routingRules: string;
+  let botList: string;
+  let historyBlock: string;
   try {
-    ({ prompt, gemmaName } = await buildClassifyPrompt(message, agents, appCfg));
+    ({ prompt, gemmaName, routingRules, botList, historyBlock } = await buildClassifyPrompt(message, agents, appCfg));
+    // selfQuery에서 사용할 수 있도록 캐시
+    _cachedPromptData = { gemmaName, routingRules, botList, historyBlock };
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.warn('[GemmaRouter] 프롬프트 빌드 실패:', errMsg);
@@ -320,5 +333,90 @@ export async function classify(
     console.warn(`[GemmaRouter] ${reason}`);
     _available = false;
     return { targets: [], reason, gemmaName };
+  }
+}
+
+// ── 셀프 쿼리 ────────────────────────────────────────────────
+
+/**
+ * 유저 질문에 젬마가 직접 답변합니다.
+ * classify() 이후 캐시된 컨텍스트를 재사용합니다.
+ *
+ * @returns 답변 문자열, 또는 null (서버 불가·오류)
+ */
+export async function selfQuery(
+  userMessage: string,
+  appCfg: AppConfig,
+): Promise<string | null> {
+  const cfg = appCfg.gemmaRouting;
+  if (!cfg?.enabled) return null;
+
+  const available = await isAvailable(cfg);
+  if (!available) return null;
+
+  const cached = _cachedPromptData;
+  const gemmaName = cached?.gemmaName ?? _cachedGemmaName;
+  const routingRules = cached?.routingRules ?? DEFAULT_ROUTING_RULES;
+  const botList = cached?.botList ?? '(알 수 없음)';
+  const historyBlock = cached?.historyBlock ?? '(대화 없음)';
+
+  const prompt = [
+    `당신은 Discord 멀티봇 시스템의 라우터 "${gemmaName}"입니다.`,
+    '유저가 당신에게 직접 질문을 하거나 명령을 내렸습니다.',
+    '아래 컨텍스트를 바탕으로 자연스럽게 답변하세요.',
+    '',
+    '━━ 당신의 역할 ━━',
+    `이름: ${gemmaName}`,
+    '역할: 멘션 없는 메시지를 분석해 적절한 봇에게 라우팅하는 라우터',
+    '',
+    '━━ 라우팅 규칙 ━━',
+    routingRules,
+    '',
+    '━━ 응답 가능한 봇 ━━',
+    botList,
+    '',
+    '━━ 최근 대화 ━━',
+    historyBlock,
+    '',
+    '━━ 유저 메시지 ━━',
+    userMessage,
+    '',
+    '답변을 한국어로 간결하게 작성하세요. JSON이 아닌 일반 텍스트로 답변합니다.',
+  ].join('\n');
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
+
+  try {
+    const res = await fetch(`${cfg.endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: cfg.model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 8000,
+        temperature: 0.7,
+      }),
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      console.warn(`[GemmaRouter/selfQuery] HTTP ${res.status}`);
+      return null;
+    }
+
+    const data = await res.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const answer = data.choices?.[0]?.message?.content?.trim() ?? '';
+    console.log(`[GemmaRouter/selfQuery] 답변: ${answer.slice(0, 200)}`);
+    return answer || null;
+
+  } catch (err) {
+    clearTimeout(timer);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[GemmaRouter/selfQuery] 실패: ${msg.slice(0, 80)}`);
+    return null;
   }
 }

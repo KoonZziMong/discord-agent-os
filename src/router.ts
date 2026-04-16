@@ -349,10 +349,15 @@ export function createRouter(agents: Agent[], appCfg: AppConfig, primaryClient: 
           }));
 
         } else if (result && result.targets.length === 0 && cmdClient) {
-          // 타겟 없음 → CmdBot이 젬마 이름으로 이유 응답
+          // 타겟 없음 → 젬마가 직접 답변 시도, 실패 시 이유만 출력
           const ch = await cmdClient.channels.fetch(channelId).catch(() => null) as TextChannel | null;
           if (ch) {
-            await ch.send(`-# 🤖 ${result.gemmaName}: ${result.reason}`).catch(() => {});
+            const answer = await gemmaRouter.selfQuery(message.content, appCfg);
+            if (answer) {
+              await ch.send(`**${result.gemmaName}**: ${answer}`).catch(() => {});
+            } else {
+              await ch.send(`-# 🤖 ${result.gemmaName}: ${result.reason}`).catch(() => {});
+            }
           }
         }
       }
